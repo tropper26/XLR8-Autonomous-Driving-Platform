@@ -1,0 +1,69 @@
+{
+  "Pure Pursuit Controller": {
+    "Default": {
+      "forward_gain": 1,
+      "base_look_ahead_distance": 2.5,
+      "kp": 2
+    }
+  },
+  "Stanley Controller": {
+    "Default": {
+      "kp": 2,
+      "k" : 0.5
+    }
+  },
+  "Model Predictive Controller": {
+    "Default": {
+      "nr_outputs": 4,
+      "nr_inputs": 2,
+      "horizon_period": 1,
+      "sampling_time": 0.1
+    }
+  },
+  "TD3": {
+    "Default": {
+      "actor_lr": 0.001,
+      "critic_lr": 0.001,
+      "tau": 0.005,
+      "gamma": 0.99,
+      "hidden_layer_dims": [400, 300],
+      "batch_size": 100,
+      "replay_buffer_max_size": 1000000,
+      "noise": 0.1,
+      "update_actor_interval": 2,
+      "warmup": 1000
+    }
+  },
+  "Soft Actor Critic": {
+    "Default": {
+      "actor_lr": 0.0004,
+      "critic_lr": 0.0004,
+      "tau": 0.005,
+      "gamma": 0.99,
+      "hidden_layer_dims": [64, 64],
+      "batch_size": 64,
+      "replay_buffer_max_size": 50000,
+      "reward_scale": 2.0
+    },
+    "Default1": {
+      "actor_lr": 0.0003,
+      "critic_lr": 0.0003,
+      "tau": 0.005,
+      "gamma": 0.99,
+      "hidden_layer_dims": [256, 256],
+      "batch_size": 256,
+      "replay_buffer_max_size": 1000000,
+      "reward_scale": 2.0
+    },
+    "Default-Higher-Reward": {
+      "actor_lr": 0.0003,
+      "critic_lr": 0.0003,
+      "tau": 0.005,
+      "gamma": 0.99,
+      "hidden_layer_dims": [256, 256],
+      "batch_size": 256,
+      "replay_buffer_max_size": 1000000,
+      "reward_scale": 5.0
+    }
+  }
+}

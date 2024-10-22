@@ -1,0 +1,38 @@
+{
+  "RC Car": {
+    "mass": 1.98,
+    "moment_of_inertia": 0.03,
+    "front_tire_stiffness_coefficient": 68,
+    "rear_tire_stiffness_coefficient": 71,
+    "front_axle_length": 0.125,
+    "rear_axle_length": 0.125,
+    "friction_coefficient": 0.85
+  },
+  "Race Car": {
+    "mass": 1200.0,
+    "moment_of_inertia": 93.0,
+    "front_tire_stiffness_coefficient": 1600,
+    "rear_tire_stiffness_coefficient": 1600,
+    "front_axle_length": 0.902,
+    "rear_axle_length": 0.638,
+    "friction_coefficient": 1.4
+  },
+  "JMS-ASMAAPT": {
+    "mass": 1140.0,
+    "moment_of_inertia": 1436.24,
+    "front_tire_stiffness_coefficient": 155494.663,
+    "rear_tire_stiffness_coefficient": 155494.663,
+    "front_axle_length": 1.165,
+    "rear_axle_length": 1.165,
+    "friction_coefficient": 1.4
+  },
+    "Sim Car": {
+    "mass": 1500.0,
+    "moment_of_inertia": 3000.0,
+    "front_tire_stiffness_coefficient": 38000,
+    "rear_tire_stiffness_coefficient": 66000,
+    "front_axle_length": 1.25,
+    "rear_axle_length": 1.25,
+    "friction_coefficient": 1.4
+  }
+}

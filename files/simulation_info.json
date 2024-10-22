@@ -1,0 +1,8 @@
+{
+  "sampling_time": 0.05,
+  "vehicle_model": "Kinematic Bicycle Model",
+  "vehicle_params": "Sim Car",
+  "static_constraints": "Default",
+  "controller": "Pure Pursuit Controller",
+  "controller_params": "Default"
+}

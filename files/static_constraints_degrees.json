@@ -1,0 +1,44 @@
+{
+  "Default": {
+    "min_x_dot": 1.0,
+    "max_x_dot": 30.0,
+    "min_y_dot_hard_limit": -3.0,
+    "max_y_dot_hard_limit": 3.0,
+    "min_x_dot_dot": -4.0,
+    "max_x_dot_dot": 1.0,
+    "min_d": -30.0,
+    "max_d": 30.0,
+    "min_delta_a": -0.1,
+    "max_delta_a": 0.1,
+    "min_delta_d": -1.0,
+    "max_delta_d": 1.0
+  },
+  "Higher Acceleration": {
+    "min_x_dot": 1.0,
+    "max_x_dot": 30.0,
+    "min_y_dot_hard_limit": -3.0,
+    "max_y_dot_hard_limit": 3.0,
+    "min_x_dot_dot": -40.0,
+    "max_x_dot_dot": 15.0,
+    "min_d": -30.0,
+    "max_d": 30.0,
+    "min_delta_a": -10,
+    "max_delta_a": 10,
+    "min_delta_d": -1.0,
+    "max_delta_d": 1.0
+  },
+  "Insane": {
+    "min_x_dot": 1,
+    "max_x_dot": 300.0,
+    "min_y_dot_hard_limit": -30.0,
+    "max_y_dot_hard_limit": 30.0,
+    "min_x_dot_dot": -400.0,
+    "max_x_dot_dot": 100.0,
+    "min_d": -60.0,
+    "max_d": 60.0,
+    "min_delta_a": -10,
+    "max_delta_a": 10,
+    "min_delta_d": -6.0,
+    "max_delta_d": 6.0
+  }
+}
