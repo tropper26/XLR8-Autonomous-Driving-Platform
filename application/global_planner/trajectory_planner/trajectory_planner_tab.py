@@ -161,7 +161,7 @@ class TrajectoryPlannerTab(QWidget):
                 canvas_with_trajectory_dto.canvas.figure.canvas.draw()
 
     def check_for_changes(self):
-        waypoints = self.current_app_status.path_manager.waypoints
+        waypoints = self.current_app_status.selected_route
         if not waypoints:
             return
 

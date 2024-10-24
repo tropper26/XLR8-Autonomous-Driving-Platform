@@ -16,30 +16,33 @@ from PyQt5.QtWidgets import (
 from application.application_status import ApplicationStatus
 from application.global_planner.path_planner.widgets.path_canvas import (
     PathCanvas,
-    DrawMode,
+    Mode,
 )
+from application.global_planner.widgets.road_network_canvas import RoadNetworkCanvas
 from dto.geometry import Rectangle
 from dto.waypoint import WaypointWithHeading
 from global_planner.road_network import RoadNetwork
 
 
-class PathCanvasWidget(QWidget):
+class PathPlannerWidget(QWidget):
     def __init__(self, current_app_status: ApplicationStatus, parent=None):
         super().__init__(parent=parent)
+
         self.graph_network_name = None
         self.current_app_status = current_app_status
 
         self.layout = QHBoxLayout(self)
         self.path_canvas = PathCanvas(
+            current_app_status=current_app_status,
             world_x_limit=self.current_app_status.world_x_limit,
             world_y_limit=self.current_app_status.world_y_limit,
             color_theme=current_app_status.color_theme,
             parent=self,
         )
 
-        self.path_canvas.pathParamsChanged.connect(self.path_params_changed)
+        self.path_canvas.obstaclesChanged.connect(self.obstacles_changed)
 
-        self.layout.addWidget(self.path_canvas, stretch=5)
+        self.layout.addWidget(self.path_canvas)
 
         self.settings_widget = QWidget(self)
         self.settings_layout = QVBoxLayout(self.settings_widget)
@@ -71,24 +74,34 @@ class PathCanvasWidget(QWidget):
         self.settings_layout.addStretch(1)
 
     def setup_mode_selection(self):
-        self.mode_widget = QWidget(self.settings_widget)
-        self.mode_layout = QVBoxLayout(self.mode_widget)
-        self.settings_layout.addWidget(self.mode_widget)
-
         self.mode_label = QLabel("Select Mode:")
         self.mode_label.setStyleSheet(f"background-color: #9c9999; padding: 10px;")
-        self.mode_layout.addWidget(self.mode_label)
+        self.settings_layout.addWidget(self.mode_label)
 
         self.mode_button_group = QButtonGroup(self.settings_widget)
-        for mode in DrawMode:
+        for mode in Mode:
             radio_button = QRadioButton(mode.name.replace("_", " ").title())
             self.mode_button_group.addButton(radio_button)
-            self.mode_layout.addWidget(radio_button)
+            self.settings_layout.addWidget(radio_button)
             radio_button.toggled.connect(
                 lambda checked, m=mode: self.set_mode(m) if checked else None
             )
-            if mode == DrawMode.Add_Waypoint:  # Set the default selected mode
+            if mode == Mode.Add_Waypoint:  # Set the default selected mode
                 radio_button.setChecked(True)
+
+    def resizeEvent(self, event):
+        # To ensure that PathCanvas maintains 16:9 aspect ratio on widget resize
+        available_width = self.width() * 5 / 6  # Assuming 5/6th of the widget width is for PathCanvas
+        available_height = self.height()
+
+        aspect_ratio = 16 / 9
+
+        new_width = min(available_width, available_height * aspect_ratio)
+        new_height = new_width / aspect_ratio
+
+        self.path_canvas.setFixedSize(int(new_width), int(new_height))
+
+        super().resizeEvent(event)
 
     def add_control_fields(self):
         self.add_field(
@@ -96,7 +109,7 @@ class PathCanvasWidget(QWidget):
         )
 
         self.save_button = QPushButton("Save")
-        self.save_button.clicked.connect(self.save_graph)
+        self.save_button.clicked.connect(self.save_changes)
         self.save_button.setStyleSheet(
             f"background-color: {self.current_app_status.color_theme.primary_color}; "
             + f"color: {self.current_app_status.color_theme.button_text_color};"
@@ -174,11 +187,18 @@ class PathCanvasWidget(QWidget):
             x_limit = float(value)
             if x_limit <= 0:
                 raise ValueError
+
+            y_limit = x_limit * 9 / 16
+
             self.current_app_status.world_x_limit = x_limit
+            self.current_app_status.world_y_limit = y_limit
+
             self.path_canvas.recalculate_positions(
                 self.current_app_status.world_x_limit,
                 self.current_app_status.world_y_limit,
             )
+
+            self.y_limit_input.setText(f"{y_limit:.2f}")
         except ValueError:
             pass  # Handle or log error appropriately
 
@@ -188,11 +208,18 @@ class PathCanvasWidget(QWidget):
             y_limit = float(value)
             if y_limit <= 0:
                 raise ValueError
+
+            x_limit = y_limit * 16 / 9
+
+            self.current_app_status.world_x_limit = x_limit
             self.current_app_status.world_y_limit = y_limit
+
             self.path_canvas.recalculate_positions(
                 self.current_app_status.world_x_limit,
                 self.current_app_status.world_y_limit,
             )
+
+            self.x_limit_input.setText(f"{x_limit:.2f}")
         except ValueError:
             pass  # Handle or log error appropriately
 
@@ -203,7 +230,6 @@ class PathCanvasWidget(QWidget):
             if lane_width <= 0:
                 raise ValueError
             self.current_app_status.lane_width = lane_width
-            self.path_canvas.emit_new_path_params()
         except ValueError:
             pass  # Handle or log error appropriately
 
@@ -214,26 +240,22 @@ class PathCanvasWidget(QWidget):
             if lane_count <= 0:
                 raise ValueError
             self.current_app_status.lane_count = lane_count
-            self.path_canvas.emit_new_path_params()
         except ValueError:
             pass  # Handle or log error appropriately
 
-    def init_path_with_waypoints(self, waypoints: list[WaypointWithHeading]):
-        self.path_canvas.world_x_limit = self.current_app_status.world_x_limit
-        self.path_canvas.world_y_limit = self.current_app_status.world_y_limit
-        self.path_canvas.init_path(waypoints)
-
     def clear_path_canvas(self):
-        self.path_canvas.clear_all()
-        self.current_app_status.delete_ref_path()
+        self.path_canvas.clear_and_reset_all()
+        # self.current_app_status.delete_ref_path()
 
-    def save_graph(self):
+    def save_changes(self):
         name = self.graph_network_name
         if not name:
             print("Network name cannot be empty")
             return
+        name.replace(" ", "_")
+
         road_network = RoadNetwork(
-            waypoints=self.path_canvas.waypoints_with_headings,
+            waypoints=self.path_canvas.path_manager.route,
         )
         road_network.add_world_info(
             self.current_app_status.world_x_limit,
@@ -241,31 +263,27 @@ class PathCanvasWidget(QWidget):
             self.current_app_status.lane_width,
             self.current_app_status.lane_count,
         )
+        self.save_graph(name, road_network)
+        self.save_image_of_graph(name, road_network)
+
+    def save_image_of_graph(self, name: str, road_network: RoadNetwork):
+        road_network_graph_canvas = RoadNetworkCanvas(
+            road_network_name=name,
+            road_network=road_network,
+            color_theme=self.current_app_status.color_theme,
+            visualize_only=True,
+        )
+        road_network_graph_canvas.save_graph_image(f"files/images/%{name}.png")
+        road_network_graph_canvas.close_figure()
+
+    def save_graph(self, name: str, road_network: RoadNetwork):
         road_network.write_graphml(f"files/graphs/%{name}.graphml")
 
-    def path_params_changed(
-        self, path_params: (list[WaypointWithHeading], list[Rectangle])
-    ):
-        start_time = time.time()
-        self.current_app_status.delete_ref_path()
+    def init_path_from_route(self, route: list[WaypointWithHeading]):
+        self.path_canvas.world_x_limit = self.current_app_status.world_x_limit
+        self.path_canvas.world_y_limit = self.current_app_status.world_y_limit
 
-        waypoints_with_heading, obstacles = path_params
+        self.path_canvas.init_path_by_route(route)
+
+    def obstacles_changed(self, obstacles: list[Rectangle]):
         self.current_app_status.path_obstacles = obstacles
-
-        if len(waypoints_with_heading) >= 2:
-            piece_wise_spiral_dfs = (
-                self.current_app_status.path_manager.compute_new_path(
-                    waypoints_with_heading,
-                    step_size=self.current_app_status.path_visualisation_step_size,
-                    path_width=self.current_app_status.path_width,
-                    return_piece_wise=True,
-                )
-            )
-            print(
-                f"Time taken to compute path in milliseconds: {(time.time() - start_time) * 1000}"
-            )
-            self.path_canvas.update_bounds(piece_wise_spiral_dfs)
-            end_time = time.time()
-            print(
-                f"Time taken to compute+viz path in milliseconds: {(end_time - start_time) * 1000}"
-            )

@@ -61,12 +61,12 @@ class GlobalPlannerTab(QWidget):
 
         if tab_name == "Road Network Selector":
             self.road_network_selector_tab.reset()
-            self.current_app_status.path_selector_waypoints = []
+            self.current_app_status.selected_route = []
         elif tab_name == "Route Selector":
             self.path_selector_tab.check_for_changes()
         elif tab_name == "Path Planner":
             print("Path Planner tab changed")
-            self.current_app_status.delete_ref_path()
+            # self.current_app_status.ref_path = None
             self.path_planner_tab.check_for_changes()
         elif tab_name == "Alternate Paths":
             self.traj_planner_tab.check_for_changes()

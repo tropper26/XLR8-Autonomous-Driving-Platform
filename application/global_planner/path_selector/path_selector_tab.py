@@ -22,7 +22,7 @@ class PathSelectorTab(QWidget):
 
     def check_for_changes(self):
         if self.current_app_status.selected_graph_network_name == "Blank Canvas":
-            self.current_app_status.path_selector_waypoints = []
+            self.current_app_status.selected_route = []
             self.current_app_status.world_x_limit = (
                 self.current_app_status.initial_world_x_limit
             )

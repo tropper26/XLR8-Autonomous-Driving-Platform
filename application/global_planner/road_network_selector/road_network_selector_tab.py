@@ -7,11 +7,9 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QSizePolicy,
 )
-from matplotlib import pyplot as plt
 
 from application.application_status import ApplicationStatus
-from application.global_planner.widgets.road_network_canvas import RoadNetworkCanvas
-from global_planner.road_network import RoadNetwork
+from application.global_planner.widgets.road_network_image import RoadNetworkImage
 from application.core.flow_layout import FlowLayout
 
 
@@ -32,6 +30,7 @@ class RoadNetworkSelectorTab(QWidget):
 
         self.current_app_status = current_app_status
         self.graphs_folder = "files/graphs"
+        self.images_folder = "files/images"
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -47,16 +46,14 @@ class RoadNetworkSelectorTab(QWidget):
         self.flow_layout = FlowLayout(self.flow_widget)
         self.scroll_area.setWidget(self.flow_widget)
 
-        self.canvases: dict[str, RoadNetworkCanvas] = {}
+        self.road_network_images: dict[str, RoadNetworkImage] = {}
         self.init_plots()
 
     def reset(self):
-        for canvas in self.canvases.values():
-            self.flow_layout.removeWidget(canvas)
-            canvas.figure.clear()
-            plt.close(canvas.figure)
-            canvas.deleteLater()
-        self.canvases = {}
+        for image in self.road_network_images.values():
+            self.flow_layout.removeWidget(image)
+
+        self.road_network_images = {}
         self.init_plots()
 
     def init_plots(self):
@@ -84,83 +81,106 @@ class RoadNetworkSelectorTab(QWidget):
         graph_file_names = get_files_with_extension(self.graphs_folder, ".graphml")
 
         for graph_file_name in graph_file_names:
-            road_network = RoadNetwork(
-                file_path=os.path.join(self.graphs_folder, graph_file_name)
-            )
-            network_graph_canvas = RoadNetworkCanvas(
+            road_network_image = RoadNetworkImage(
                 road_network_name=self.clean_name(graph_file_name),
-                road_network=road_network,
-                color_theme=self.current_app_status.color_theme,
-                visualize_only=True,
+                path_to_image=os.path.join(self.images_folder, graph_file_name.replace(".graphml", ".png")),
+                path_to_no_figure_found=os.path.join(self.images_folder, "no_figure_found.png"),
+                color_theme=self.current_app_status.color_theme
             )
 
-            self.canvases[graph_file_name] = network_graph_canvas
+            road_network_image.setFixedSize(300,300)
 
-            network_graph_canvas.enterEvent = (
+            road_network_image.enterEvent = (
                 lambda event, name=graph_file_name: self.enter_plot_canvas(event, name)
             )
-            network_graph_canvas.leaveEvent = (
+
+            road_network_image.leaveEvent = (
                 lambda event, name=graph_file_name: self.leave_plot_canvas(event, name)
             )
-            network_graph_canvas.mousePressEvent = (
+
+            road_network_image.mousePressEvent = (
                 lambda event, name=graph_file_name: self.click_plot_canvas(event, name)
             )
 
-            self.flow_layout.addWidget(network_graph_canvas)
+            self.road_network_images[graph_file_name] = road_network_image
 
-        graph_file_name = "Blank Canvas"
-        road_network = RoadNetwork(waypoints=[], grid_cell_count=(1, 1))
-        network_graph_canvas = RoadNetworkCanvas(
-            road_network_name=graph_file_name,
-            road_network=road_network,
-            color_theme=self.current_app_status.color_theme,
-            visualize_only=True,
+            self.flow_layout.addWidget(road_network_image)
+
+        blank_graph_file_name = "Blank Canvas"
+
+        blank_road_network_image = RoadNetworkImage(
+            road_network_name=blank_graph_file_name,
+            path_to_image=os.path.join(self.images_folder, "blank_canvas.png"),
+            path_to_no_figure_found=os.path.join(self.images_folder, "no_figure_found.png"),
+            color_theme=self.current_app_status.color_theme
         )
 
-        self.canvases[graph_file_name] = network_graph_canvas
+        blank_road_network_image.setFixedSize(300,300)
 
-        network_graph_canvas.enterEvent = (
-            lambda event, name=graph_file_name: self.enter_plot_canvas(event, name)
-        )
-        network_graph_canvas.leaveEvent = (
-            lambda event, name=graph_file_name: self.leave_plot_canvas(event, name)
-        )
-        network_graph_canvas.mousePressEvent = (
-            lambda event, name=graph_file_name: self.click_plot_canvas(event, name)
+        blank_road_network_image.enterEvent = (
+            lambda event, name=blank_graph_file_name: self.enter_plot_canvas(event, name)
         )
 
-        self.flow_layout.addWidget(network_graph_canvas)
+        blank_road_network_image.leaveEvent = (
+            lambda event, name=blank_graph_file_name: self.leave_plot_canvas(event, name)
+        )
+
+        blank_road_network_image.mousePressEvent = (
+            lambda event, name=blank_graph_file_name: self.click_plot_canvas(event, name)
+        )
+
+        self.road_network_images[blank_graph_file_name] = blank_road_network_image
+
+        self.flow_layout.addWidget(blank_road_network_image)
 
     def click_plot_canvas(self, event, network_graph_name: str):
         # Reset the color of the previously clicked canvas
-        currently_selected_figure_canvas = self.canvases[
+        currently_selected_road_network = self.road_network_images[
             self.current_app_status.selected_graph_network_name
         ]
-        fig = currently_selected_figure_canvas.figure
-        fig.patch.set_facecolor(self.current_app_status.color_theme.background_color)
-        fig.canvas.draw()
+
+        currently_selected_road_network.text_label.setStyleSheet(
+            f"color: {self.current_app_status.color_theme.button_text_color};"
+            f"font-size: 20px;"
+        )
+        currently_selected_road_network.pixmap_label.setStyleSheet(
+            f"border: 8px;"
+            f"border-style: solid;"
+            f"border-color: {self.current_app_status.color_theme.secondary_color};"
+            f"border-radius: 10px;"
+        )
 
         # Change the color of the newly clicked canvas
-        newly_selected_canvas_with_road_network = self.canvases[network_graph_name]
-        fig = newly_selected_canvas_with_road_network.figure
-
-        fig.patch.set_facecolor(self.current_app_status.color_theme.selected_color)
-        fig.canvas.draw()
+        road_network_image = self.road_network_images[network_graph_name]
+        road_network_image.text_label.setStyleSheet(
+            f"color: {self.current_app_status.color_theme.hover_color};"
+            f"font-size: 20px;"
+        )
+        road_network_image.pixmap_label.setStyleSheet(
+            f"border: 8px;"
+            f"border-style: solid;"
+            f"border-color: {self.current_app_status.color_theme.hover_color};"
+            f"border-radius: 10px;"
+        )
 
         self.current_app_status.selected_graph_network_name = network_graph_name
 
     def enter_plot_canvas(self, event, network_graph_name):
         if self.current_app_status.selected_graph_network_name != network_graph_name:
-            figure_canvas = self.canvases[network_graph_name]
-            figure_canvas.figure.patch.set_facecolor(
-                self.current_app_status.color_theme.hover_color
+            road_network_image = self.road_network_images[network_graph_name]
+            road_network_image.pixmap_label.setStyleSheet(
+                f"border: 8px;"
+                f"border-style: solid;"
+                f"border-color: {self.current_app_status.color_theme.background_color};"
+                f"border-radius: 10px;"
             )
-            figure_canvas.figure.canvas.draw()
 
     def leave_plot_canvas(self, event, network_graph_name):
         if self.current_app_status.selected_graph_network_name != network_graph_name:
-            figure_canvas = self.canvases[network_graph_name]
-            figure_canvas.figure.patch.set_facecolor(
-                self.current_app_status.color_theme.background_color
+            road_network_image = self.road_network_images[network_graph_name]
+            road_network_image.pixmap_label.setStyleSheet(
+                f"border: 8px;"
+                f"border-style: solid;"
+                f"border-color: {self.current_app_status.color_theme.secondary_color};"
+                f"border-radius: 10px;"
             )
-            figure_canvas.figure.canvas.draw()

@@ -52,12 +52,10 @@ class RoadNetworkCanvasWidget(QWidget):
             )
 
             if self.current_graph_network_name.startswith("%"):
+                print(self.road_network.nodes, type(self.road_network.nodes))
                 self.current_path_node_ids: list[int] = sorted(
                     [int(node) for node in self.road_network.nodes()]
                 )  # sort as integers
-                self.current_path_node_ids = [
-                    str(node) for node in self.current_path_node_ids
-                ]
 
                 self.network_graph_canvas = RoadNetworkCanvas(
                     road_network_name=self.clean_name(self.current_graph_network_name),
@@ -78,9 +76,9 @@ class RoadNetworkCanvasWidget(QWidget):
             self.layout.addWidget(self.network_graph_canvas)
         self.set_selected_path(self.current_path_node_ids)
 
-    def set_selected_path(self, path_node_ids: list[str]):
+    def set_selected_path(self, path_node_ids: list[int]):
         self.current_path_node_ids = path_node_ids
-        self.current_app_status.path_selector_waypoints = (
+        self.current_app_status.selected_route = (
             self.road_network.get_waypoints_based_on_ids(path_node_ids)
         )
         (

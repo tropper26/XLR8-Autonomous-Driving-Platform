@@ -41,7 +41,7 @@ class RoadNetworkCanvas(FigureCanvas):
         road_network: RoadNetwork,
         color_theme: ColorTheme,
         visualize_only=False,
-        initial_path: list[str] = None,
+        initial_path: list[int] = None,
     ):
         figsize = (4, 4) if visualize_only else (12, 12)
         self.fig, self.ax = plt.subplots(figsize=figsize)
@@ -113,23 +113,29 @@ class RoadNetworkCanvas(FigureCanvas):
             pos=pos,
             ax=self.ax,
             arrows=True,
-            arrowsize=10,
+            arrowsize=20,
             with_labels=True,
-            node_size=350,
+            node_size=500,
             node_color=node_colors,
-            font_size=6,
+            font_size=15,
             font_color="lightblue",
             edge_color=edge_colors,
         )
 
-        self.ax.set_title(self.road_network_name)
         self.ax.axis("on")
         if not self.visualize_only:
+            self.ax.set_title(self.road_network_name)
             self.ax.set_xlabel("X Coordinate")
             self.ax.set_ylabel("Y Coordinate")
             self.ax.yaxis.set_label_position("right")
 
         self.draw()
+
+    def save_graph_image(self, file_path):
+        self.fig.savefig(file_path, transparent=True)
+
+    def close_figure(self):
+        plt.close(self.fig)
 
     def on_click(self, event):
         if self.visualize_only:
