@@ -3,7 +3,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from PyQt5.QtCore import Qt
-from matplotlib import gridspec
+from matplotlib import gridspec, patches
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.animation import FuncAnimation
@@ -29,7 +29,7 @@ from vehicle.vehicle_params import VehicleParams
 
 
 def update_axes_limits(
-    axes, padding, x_lim: (float, float) = None, y_lim: (float, float) = None
+        axes, padding, x_lim: (float, float) = None, y_lim: (float, float) = None
 ):
     """
     Recalculates the data limits and autoscales the given axes, then adds specified padding to the axes' limits.
@@ -57,9 +57,9 @@ def update_axes_limits(
 
 class SimulationVisualizerWidget(QWidget):
     def __init__(
-        self,
-        color_theme: ColorTheme,
-        parent=None,
+            self,
+            color_theme: ColorTheme,
+            parent=None,
     ):
         super().__init__(parent)
         self.invalid_trajectories_plot = None
@@ -98,7 +98,7 @@ class SimulationVisualizerWidget(QWidget):
 
         # Initialize the car shape and path plots
         self.vehicle_polygons = []
-        self.visual_range_ploygons = []
+        self.visual_range_ellipses = []
         self.wheel_polygons = []
         self.car_trajectory_plots = []
         self.controller_viz_plots = []
@@ -295,14 +295,14 @@ class SimulationVisualizerWidget(QWidget):
         )
 
     def create_subplot_for_main_plot(
-        self,
-        fig,
-        gs,
-        row_start,
-        row_end,
-        col_start,
-        col_end,
-        ylabel,
+            self,
+            fig,
+            gs,
+            row_start,
+            row_end,
+            col_start,
+            col_end,
+            ylabel,
     ):
         ax = fig.add_subplot(
             gs[row_start:row_end, col_start:col_end], facecolor=(0.9, 0.9, 0.9)
@@ -357,11 +357,11 @@ class SimulationVisualizerWidget(QWidget):
         update_axes_limits(self.ref_x_dot_plot.axes, padding=0.5)
 
     def setup_ref_path(
-        self,
-        discretized_path: PathSegmentDiscretization,
-        path_obstacles: list[Rectangle],
-        simulation_x_limit: float,
-        simulation_y_limit: float,
+            self,
+            discretized_path: PathSegmentDiscretization,
+            path_obstacles: list[Rectangle],
+            simulation_x_limit: float,
+            simulation_y_limit: float,
     ):
         self.main_plot_ax.clear()
 
@@ -439,16 +439,19 @@ class SimulationVisualizerWidget(QWidget):
         self.canvas.draw_idle()
 
     def add_visual_area_plot(self):
-        visual_area_polygon = plt.Polygon(
-            [(0,0),(0.1,0.1)],  # temporary values
-            closed=True,
-            fill=True,
+        visual_area_ellipse = patches.Ellipse(
+            (0, 0),
+            width=10,
+            height=5,
+            angle=0,
+            fill=False,
+            edgecolor="purple",
             zorder=20,
-            color="purple",
-            label=f"Visual Range Armin",
+            label="Visual Range of Vehicle",
         )
-        self.main_plot_ax.add_patch(visual_area_polygon)
-        self.visual_range_ploygons.append(visual_area_polygon)
+
+        self.main_plot_ax.add_patch(visual_area_ellipse)
+        self.visual_range_ellipses.append(visual_area_ellipse)
 
     def add_car_plot(self, vp: VehicleParams):
         name = f"{self.vehicle_plot_count}" if self.vehicle_plot_count > 0 else ""
@@ -571,7 +574,7 @@ class SimulationVisualizerWidget(QWidget):
 
     def on_animation_end(self):
         if (
-            self.sim_results_counter > self.last_sim_nr
+                self.sim_results_counter > self.last_sim_nr
         ):  # New simulation results received
             self.update_results_to_visualize(self.new_sim_results.copy())
 
@@ -590,21 +593,21 @@ class SimulationVisualizerWidget(QWidget):
         index = self.current_index
 
         vehicle_polygon: Polygon
-        visual_range_polygon: Polygon
+        visual_range_ellipse: patches.Ellipse
         wheel_polygon: Polygon
         sim_result: SimulationResult
 
         for (
-            vehicle_polygon,
-            visual_range_polygon,
-            wheel_polygons,
-            car_trajectory_plot,
-            controller_viz_plot,
-            controller_viz_ref_plot,
-            sim_result,
+                vehicle_polygon,
+                visual_range_ellipse,
+                wheel_polygons,
+                car_trajectory_plot,
+                controller_viz_plot,
+                controller_viz_ref_plot,
+                sim_result,
         ) in zip(
             self.vehicle_polygons,
-            self.visual_range_ploygons,
+            self.visual_range_ellipses,
             self.wheel_polygons,
             self.car_trajectory_plots,
             self.controller_viz_plots,
@@ -629,15 +632,10 @@ class SimulationVisualizerWidget(QWidget):
                 )
                 vehicle_polygon.set_xy(vehicle_shape)
 
-                # visual_range_polygon_shape =
-                polygon = draw_visual_range(
-                    current_state,
-                    sim_result.vehicle_params_for_visualization
-                )
-
-                visual_range_polygon.set_xy(
-                    polygon
-                )
+                front_axle_X, front_axle_Y = sim_result.vehicle_params_for_visualization.front_axle_position(
+                    current_state)
+                visual_range_ellipse.set_center((front_axle_X, front_axle_Y))
+                visual_range_ellipse.angle = np.degrees(current_state.Psi)
 
                 for wheel_polygon, wheel_shape in zip(wheel_polygons, wheel_shapes):
                     wheel_polygon.set_xy(wheel_shape)
@@ -736,7 +734,7 @@ class SimulationVisualizerWidget(QWidget):
         return iter(
             (
                 self.vehicle_polygons,
-                self.visual_range_ploygons,
+                self.visual_range_ellipses,
                 self.wheel_polygons,
                 self.car_trajectory_plots,
                 self.controller_viz_plots,
@@ -778,7 +776,7 @@ class SimulationVisualizerWidget(QWidget):
                     self.table.item(row, col).setText("")
 
     def set_table_text(
-        self, table: list[list[float]], start_index: int, end_index: int, offset: int
+            self, table: list[list[float]], start_index: int, end_index: int, offset: int
     ):
         """Set table cells from DataFrame values with rounding for floats."""
         for i, row_idx in enumerate(range(start_index, end_index)):
@@ -802,9 +800,9 @@ class SimulationVisualizerWidget(QWidget):
 
     def navigate_next(self):
         if (
-            self.buttons_enabled
-            and not self.playing
-            and self.current_index < self.max_frame_count - 1
+                self.buttons_enabled
+                and not self.playing
+                and self.current_index < self.max_frame_count - 1
         ):
             self.current_index += 1
             self.update_plots()
@@ -906,7 +904,7 @@ def calculate_ackerman_angles(steering_angle, wheelbase, width):
 
 
 def draw_vehicle(
-    current_state: State, steering_angle: float, vp: VehicleParams
+        current_state: State, steering_angle: float, vp: VehicleParams
 ) -> tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]:
     vehicle_shape = compute_rectangle_given_center(
         current_state.X,
@@ -986,13 +984,27 @@ def draw_vehicle(
             back_right_wheel_shape,
         ]
 
+
 def draw_visual_range(current_state: State, vp: VehicleParams) -> list[tuple[float, float]]:
     front_axle_X, front_axle_Y = vp.front_axle_position(current_state)
 
-    triangle_side = 2 * 5 / math.sqrt(3)
+    # Define ellipse parameters
+    major_axis = 10
+    minor_axis = 5
+    num_points = 100  # The number of points to approximate the ellipse shape
 
-    point1 = (front_axle_X + triangle_side * np.cos(current_state.Psi - np.pi / 3), front_axle_Y + triangle_side * np.sin(current_state.Psi - np.pi / 3))
-    point2 = (front_axle_X + triangle_side * np.cos(current_state.Psi + np.pi / 3),
-              front_axle_Y + triangle_side * np.sin(current_state.Psi + np.pi / 3))
+    # Parametric equation for an ellipse
+    t = np.linspace(0, 2 * np.pi, num_points)
+    ellipse_x = major_axis * np.cos(t) / 2  # Divide by 2 since axes are diameters
+    ellipse_y = minor_axis * np.sin(t) / 2
 
-    return [(front_axle_X, front_axle_Y), point1, point2]
+    # Rotate ellipse to align with the vehicle's Psi (heading angle)
+    cos_psi = np.cos(current_state.Psi)
+    sin_psi = np.sin(current_state.Psi)
+
+    rotated_ellipse = [
+        (front_axle_X + cos_psi * x - sin_psi * y, front_axle_Y + sin_psi * x + cos_psi * y)
+        for x, y in zip(ellipse_x, ellipse_y)
+    ]
+
+    return rotated_ellipse
