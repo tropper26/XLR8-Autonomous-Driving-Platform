@@ -12,15 +12,15 @@ from PyQt5.QtWidgets import (
 
 
 class SignalEmitter(QObject):
-    valueChanged = pyqtSignal()
+    valueChanged = pyqtSignal(object, name="valueChanged")
 
 
-class CompositeItem(QGraphicsItem):
-    def __init__(self, length=100, initial_rotation_radians=0):
-        super(CompositeItem, self).__init__()
+class WaypointCompositeItem(QGraphicsItem):
+    def __init__(self, index_in_route: int, length=100, initial_rotation_radians=0, parent=None):
+        super(WaypointCompositeItem, self).__init__(parent)
         self.signals = SignalEmitter()
+        self.index_in_route = index_in_route
         self.length = length
-
         self.selected = False
 
         self.angle_radians = initial_rotation_radians
@@ -54,7 +54,7 @@ class CompositeItem(QGraphicsItem):
         return self.signals.valueChanged
 
     def setPos(self, point: QPointF):
-        super(CompositeItem, self).setPos(point)
+        super(WaypointCompositeItem, self).setPos(point)
 
     def boundingRect(self):
         return QRectF(-self.length / 2 - 10, -15, self.length + 20, 30)
@@ -79,7 +79,7 @@ class CompositeItem(QGraphicsItem):
         self.updateAngleLabel(int(normalized_angle_degrees))
 
         self.angle_radians = np.radians(normalized_angle_degrees)
-        self.valueChanged.emit()
+        self.valueChanged.emit(self)
 
     def setSelected(self, is_selected):
         self.selected = is_selected
@@ -89,10 +89,10 @@ class CompositeItem(QGraphicsItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange:
-            self.valueChanged.emit()
+            self.valueChanged.emit(self)
         elif change == QGraphicsItem.ItemSelectedChange:
             self.setSelected(value)
-        return super(CompositeItem, self).itemChange(change, value)
+        return super(WaypointCompositeItem, self).itemChange(change, value)
 
     def hoverEnterEvent(self, event):
         QApplication.setOverrideCursor(
