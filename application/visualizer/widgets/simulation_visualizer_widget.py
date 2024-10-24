@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
 from PyQt5.QtCore import Qt
@@ -96,6 +98,7 @@ class SimulationVisualizerWidget(QWidget):
 
         # Initialize the car shape and path plots
         self.vehicle_polygons = []
+        self.visual_range_ploygons = []
         self.wheel_polygons = []
         self.car_trajectory_plots = []
         self.controller_viz_plots = []
@@ -435,6 +438,18 @@ class SimulationVisualizerWidget(QWidget):
 
         self.canvas.draw_idle()
 
+    def add_visual_area_plot(self):
+        visual_area_polygon = plt.Polygon(
+            [(0,0),(0.1,0.1)],  # temporary values
+            closed=True,
+            fill=True,
+            zorder=20,
+            color="purple",
+            label=f"Visual Range Armin",
+        )
+        self.main_plot_ax.add_patch(visual_area_polygon)
+        self.visual_range_ploygons.append(visual_area_polygon)
+
     def add_car_plot(self, vp: VehicleParams):
         name = f"{self.vehicle_plot_count}" if self.vehicle_plot_count > 0 else ""
 
@@ -510,6 +525,8 @@ class SimulationVisualizerWidget(QWidget):
         for index in range(len(new_sim_res) - self.vehicle_plot_count):
             self.add_car_plot(new_sim_res[index].vehicle_params_for_visualization)
 
+        self.add_visual_area_plot()
+
         self.new_sim_results = new_sim_res.copy()
 
         if not self.animation:  # First time visualization
@@ -573,11 +590,13 @@ class SimulationVisualizerWidget(QWidget):
         index = self.current_index
 
         vehicle_polygon: Polygon
+        visual_range_polygon: Polygon
         wheel_polygon: Polygon
         sim_result: SimulationResult
 
         for (
             vehicle_polygon,
+            visual_range_polygon,
             wheel_polygons,
             car_trajectory_plot,
             controller_viz_plot,
@@ -585,6 +604,7 @@ class SimulationVisualizerWidget(QWidget):
             sim_result,
         ) in zip(
             self.vehicle_polygons,
+            self.visual_range_ploygons,
             self.wheel_polygons,
             self.car_trajectory_plots,
             self.controller_viz_plots,
@@ -608,6 +628,16 @@ class SimulationVisualizerWidget(QWidget):
                     sim_result.vehicle_params_for_visualization,
                 )
                 vehicle_polygon.set_xy(vehicle_shape)
+
+                # visual_range_polygon_shape =
+                polygon = draw_visual_range(
+                    current_state,
+                    sim_result.vehicle_params_for_visualization
+                )
+
+                visual_range_polygon.set_xy(
+                    polygon
+                )
 
                 for wheel_polygon, wheel_shape in zip(wheel_polygons, wheel_shapes):
                     wheel_polygon.set_xy(wheel_shape)
@@ -706,6 +736,7 @@ class SimulationVisualizerWidget(QWidget):
         return iter(
             (
                 self.vehicle_polygons,
+                self.visual_range_ploygons,
                 self.wheel_polygons,
                 self.car_trajectory_plots,
                 self.controller_viz_plots,
@@ -954,3 +985,14 @@ def draw_vehicle(
             back_left_wheel_shape,
             back_right_wheel_shape,
         ]
+
+def draw_visual_range(current_state: State, vp: VehicleParams) -> list[tuple[float, float]]:
+    front_axle_X, front_axle_Y = vp.front_axle_position(current_state)
+
+    triangle_side = 2 * 5 / math.sqrt(3)
+
+    point1 = (front_axle_X + triangle_side * np.cos(current_state.Psi - np.pi / 3), front_axle_Y + triangle_side * np.sin(current_state.Psi - np.pi / 3))
+    point2 = (front_axle_X + triangle_side * np.cos(current_state.Psi + np.pi / 3),
+              front_axle_Y + triangle_side * np.sin(current_state.Psi + np.pi / 3))
+
+    return [(front_axle_X, front_axle_Y), point1, point2]
