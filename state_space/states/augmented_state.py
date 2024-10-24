@@ -1,6 +1,5 @@
 from copy import deepcopy
 
-import pandas as pd
 from numpy import vstack, array
 
 from state_space.inputs.control_action import ControlAction
@@ -110,18 +109,4 @@ class AugmentedState(BaseState):
             x_dot=self.x_dot,
             y_dot=self.y_dot,
             psi_dot=self.psi_dot,
-        )
-
-    def as_series(self) -> pd.Series:
-        return pd.Series(
-            {
-                "X": self.X,
-                "Y": self.Y,
-                "Psi": self.Psi,
-                "x_dot": self.x_dot,
-                "y_dot": self.y_dot,
-                "psi_dot": self.psi_dot,
-                "a": self.previous_a,
-                "d": self.previous_d,
-            }
         )

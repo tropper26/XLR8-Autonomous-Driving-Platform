@@ -4,9 +4,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 
 from dto.waypoint import Waypoint
-from local_planner.parametric_curves.cubic_spline_planner import (
-    calc_spline_course,
-)
+from test.parametric_curve_testing.copied_cubic_spline_planner import calc_spline_course
 
 
 def generate_cubic_spline_trajectory(waypoints: List[Waypoint], sampling_time: float):

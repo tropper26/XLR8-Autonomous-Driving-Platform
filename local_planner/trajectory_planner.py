@@ -1,19 +1,133 @@
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 
 import numpy as np
-import pandas as pd
-from pandas import DataFrame
 
-from dto.coord_transform import inertial_to_path_frame, compute_path_frame_error
+from dto.coord_transform import compute_path_frame_error
 from dto.geometry import Rectangle
-from dto.waypoint import Waypoint
-from local_planner.parametric_curves.spiral_optimisation import (
-    create_spiral_interpolation,
-    eval_spiral,
+from dto.waypoint import Waypoint, WaypointWithHeading
+from parametric_curves.curve import (
+    CurveDiscretization,
 )
-from local_planner.pathmanager import compute_lateral_points, SpiralInputParams
+from parametric_curves.path_segment import PathSegmentDiscretization
+from parametric_curves.spiral import ParametricSpiralInfo
+from parametric_curves.spiral_input_params import SpiralInputParams
+from parametric_curves.spiral_optimisation import (
+    optimize_spiral,
+)
+from parametric_curves.trajectory import SpiralTrajectory
+from state_space.inputs.control_action import ControlAction
 from state_space.states.state import State
 from vehicle.vehicle_info import VehicleInfo
+
+
+def find_closest_index_on_trajectory(
+    current_position: Waypoint,
+    trajectory: SpiralTrajectory,
+):
+    # Compute the Euclidean distance between the vehicle's position and each reference point
+    # There are other ways to do this, computing the closest point on the parametric
+    # representation of the curve instead of the discrete points
+
+    return np.argmin(
+        np.hypot(
+            trajectory.discretized.X - current_position.x,
+            trajectory.discretized.Y - current_position.y,
+        )
+    )
+
+
+def compute_lateral_points(X, Y, Psi, dist):
+    # Compute the first derivative (tangent vectors)
+    dx_dt = np.cos(Psi)
+    dy_dt = np.sin(Psi)
+
+    # Calculate normalized normal vectors
+    norms = np.sqrt(dx_dt**2 + dy_dt**2)  # Norm of the tangent vectors
+    nx = (
+        -dy_dt / norms
+    ) * dist  # Normal x components (90 degrees rotation of the tangent vector)
+    ny = dx_dt / norms * dist
+
+    X_pos = X + nx
+    Y_pos = Y + ny
+    X_neg = X - nx
+    Y_neg = Y - ny
+
+    return X_pos, Y_pos, X_neg, Y_neg
+
+
+def compute_candidate_trajectory_params(
+    observed_path_width: float,
+    observed_path_discretization: PathSegmentDiscretization,
+    vehicle_position: WaypointWithHeading,
+    look_ahead_distance: float,
+    lateral_candidate_count: int,
+):
+    # get the first index that is ahead of the look ahead distance
+    target_index = int(
+        observed_path_discretization.S.searchsorted(
+            observed_path_discretization.S[0] + look_ahead_distance
+        )
+    )
+
+    target_index = min(
+        target_index, len(observed_path_discretization) - 1
+    )  # Clamp target index
+
+    target_X, target_Y, target_Psi = observed_path_discretization.row_at(
+        target_index, ("X", "Y", "Psi")
+    )
+
+    candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)]
+
+    if lateral_candidate_count > 0:
+        # Generate candidate target points by moving laterally from the target point in both directions
+        max_lat_dist = observed_path_width / 2
+        distances = np.linspace(0, max_lat_dist, lateral_candidate_count // 2)
+        distances = np.concatenate((-distances, distances))
+
+        X_pos, Y_pos, X_neg, Y_neg = compute_lateral_points(
+            target_X, target_Y, target_Psi, distances
+        )
+        for i in range(len(distances)):
+            candidate_target_points.append(Waypoint(x=X_pos[i], y=Y_pos[i]))
+            candidate_target_points.append(Waypoint(x=X_neg[i], y=Y_neg[i]))
+
+    candidate_trajectory_params_list = [
+        SpiralInputParams(
+            x_0=vehicle_position.x,
+            y_0=vehicle_position.y,
+            psi_0=vehicle_position.heading,
+            k_0=0.0,
+            x_f=point.x,
+            y_f=point.y,
+            psi_f=target_Psi,
+            k_f=0.0,
+            k_max=1.0,  # TODO this should actually be: k_max = min{k_max1, k_max2},
+            # TODO where k_max1 = tan(max_d)/wheelbase and k_max2 = a_lat_max / (v^2 + 0.0(...)1)
+        )
+        for point in candidate_target_points
+    ]
+    # print("K_max: ", np.tan(self.vi.max_d) / self.vi.wheelbase)
+
+    return candidate_trajectory_params_list
+
+
+def optimize_spiral_path_segment(
+    segment_params: SpiralInputParams, discretization_step_size: float = None
+):
+    return SpiralTrajectory(
+        spiral_info=ParametricSpiralInfo(
+            start_point=WaypointWithHeading(
+                x=segment_params.x_0,
+                y=segment_params.y_0,
+                heading=segment_params.psi_0,
+            ),
+            params=optimize_spiral(*segment_params.as_tuple()),
+        ),
+        discretization_step_size=discretization_step_size,
+    )
 
 
 class TrajectoryPlanner:
@@ -21,215 +135,164 @@ class TrajectoryPlanner:
         self,
         vi: VehicleInfo,
         min_trajectory_length: float,
-        possible_trajectory_step_size: float = 0.5,
+        step_size_for_collision_check: float = 0.20,
     ):
         self.vi = vi
         self.min_trajectory_length = min_trajectory_length
-        self.possible_trajectory_step_size = possible_trajectory_step_size
+        self.step_size_for_collision_check = step_size_for_collision_check
+        self.safety_margin_radius = 1.3 * self.vi.vp.width // 2
 
-        self.current_trajectory = None
-        self.alternate_trajectories = None
-        self.invalid_trajectories = None
-
-    def find_closest_index_on_trajectory(self, current_state: State):
-        # Compute the Euclidean distance between the vehicle's position and each reference point
-        front_X, front_Y = self.vi.front_axle_position(current_state)
-        distances = np.linalg.norm(
-            np.column_stack((self.current_trajectory.X, self.current_trajectory.Y))
-            - np.array([front_X, front_Y]),
-            axis=1,
-        )
-
-        closest_index = np.argmin(distances)
-
-        return closest_index
+        self.current_trajectory: Optional[SpiralTrajectory] = None
+        self.alternate_trajectories: Optional[list[SpiralTrajectory]] = None
+        self.invalid_trajectories: Optional[list[SpiralTrajectory]] = None
 
     def plan_iteration_trajectory(
         self,
         current_state: State,
-        observed_path: DataFrame,
+        prev_action: ControlAction,
+        observed_path_discretization: PathSegmentDiscretization,
         observed_path_width: float,
         visible_obstacles: list[Rectangle],
-    ) -> (DataFrame, bool, list[DataFrame], list[DataFrame]):
-        start_S_path = observed_path.iloc[0]["S"]
-        end_S_path = observed_path.iloc[-1]["S"]
+    ) -> tuple[bool, SpiralTrajectory, list[SpiralTrajectory], list[SpiralTrajectory]]:
+        start_S_path = observed_path_discretization.S[0]
+        front_X, front_Y = self.vi.front_axle_position(current_state)
 
         if self.current_trajectory is not None:
-            closest_index = self.find_closest_index_on_trajectory(current_state)
-            self.current_trajectory = self.current_trajectory.iloc[closest_index:]
+            closest_index = find_closest_index_on_trajectory(
+                Waypoint(front_X, front_Y), self.current_trajectory
+            )
+
+            # remove the points that are behind the vehicle
+            self.current_trajectory.discretized.slice_inplace(
+                slice(closest_index, None)
+            )
 
             trajectory_length = (
-                self.current_trajectory.iloc[-1]["S"]
-                - self.current_trajectory.iloc[0]["S"]
+                self.current_trajectory.discretized.S[-1]
+                - self.current_trajectory.discretized.S[0]
             )
-            path_length = end_S_path - start_S_path
+
+            path_length = observed_path_discretization.S[-1] - start_S_path
 
             # If the trajectory is long enough or the remaining path is too short only replan if the path is not clear
             if (
                 trajectory_length >= self.min_trajectory_length
                 or path_length <= self.min_trajectory_length
             ):
-                current_trajectory_clear = not any(
-                    np.any(
-                        visible_obstacle.intersects_circles(
-                            self.current_trajectory[["X", "Y"]].to_numpy(),
-                            1.2 * self.vi.vp.width // 2,  # 1.2 is a safety factor
-                        )
-                    )
-                    for visible_obstacle in visible_obstacles
-                )
-                if current_trajectory_clear:
+                if check_trajectory_clear(
+                    self.current_trajectory.discretized,
+                    visible_obstacles,
+                    self.safety_margin_radius,
+                ):
+
                     return (
-                        self.current_trajectory,
                         True,
+                        self.current_trajectory,
                         self.alternate_trajectories,
                         self.invalid_trajectories,
                     )
-        print("Replanning trajectory")
-        front_X, front_Y = self.vi.front_axle_position(current_state)
 
-        candidate_trajectory_params_list = self.compute_candidate_trajectory_params(
-            visible_obstacles,
-            observed_path_width,
-            observed_path,
-            front_X,
-            front_Y,
-            current_state.Psi,
+        print("Replanning trajectory")
+
+        candidate_trajectory_params_list = compute_candidate_trajectory_params(
+            observed_path_width=observed_path_width,
+            observed_path_discretization=observed_path_discretization,
+            vehicle_position=WaypointWithHeading(
+                front_X, front_Y, current_state.Psi
+            ),  # TODO verify if it should be Psi or Psi + steering angle
+            look_ahead_distance=5,
+            lateral_candidate_count=10 if visible_obstacles else 0,
         )
+
         (
-            best_trajectory_optimisation_params,
             found_clear_trajectory,
+            best_trajectory,
             self.alternate_trajectories,
             self.invalid_trajectories,
         ) = self.plan_trajectories_concurrently(
             candidate_trajectory_params_list,
             visible_obstacles,
-            step_size=self.possible_trajectory_step_size,
         )
 
-        # compute a more accurate path discretisation than needed for visualisation
-        best_trajectory = eval_spiral(
-            best_trajectory_optimisation_params,
-            x_0=front_X,
-            y_0=front_Y,
-            psi_0=current_state.Psi,
-            ds=0.01,
-        )
+        # compute a more accurate path discretization than needed for visualization
+        best_trajectory.evaluate(0.01)
 
-        best_trajectory["x_dot"] = compute_velocity_profile(
-            current_state.x_dot + 0.1,
+        velocity_profile = compute_velocity_profile(
+            current_state.x_dot,
             v_min=self.vi.min_x_dot,
             v_max=self.vi.max_x_dot,
             a_long_max=self.vi.max_a,
             a_long_min=self.vi.min_a,
             a_lat_max=self.vi.static_constraints.max_y_dot_dot,
-            curve=best_trajectory,
+            trajectory_discretization=best_trajectory.discretized,
         )
 
-        best_trajectory["S"] += start_S_path
+        best_trajectory.discretized.x_dot = velocity_profile
+
+        best_trajectory.discretized.S += start_S_path
 
         self.current_trajectory = best_trajectory
+
         return (
-            self.current_trajectory,
             found_clear_trajectory,
+            self.current_trajectory,
             self.alternate_trajectories,
             self.invalid_trajectories,
         )
-
-    def compute_candidate_trajectory_params(
-        self,
-        visible_obstacles,
-        observed_path_width,
-        observed_path,
-        front_X,
-        front_Y,
-        vehicle_heading,
-    ):
-        current_arclength = observed_path.iloc[0]["S"]
-        target_index = np.searchsorted(
-            observed_path.S.values, current_arclength + 5
-        )  # get the first index that is ahead of the look ahead distance
-        if target_index >= len(observed_path):
-            target_index = len(observed_path) - 1
-        target_X, target_Y, target_Psi = observed_path.iloc[target_index][
-            ["X", "Y", "Psi"]
-        ]
-
-        candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)]
-
-        if visible_obstacles:
-            candidate_count = 10
-            max_lat_dist = observed_path_width / 2
-            distances = np.linspace(0, max_lat_dist, candidate_count // 2)
-            distances = np.concatenate((-distances, distances))
-
-            (
-                (X_pos, Y_pos),
-                (X_neg, Y_neg),
-            ) = compute_lateral_points(target_X, target_Y, target_Psi, distances)
-            for i in range(len(distances)):
-                candidate_target_points.append(Waypoint(x=X_pos[i], y=Y_pos[i]))
-                candidate_target_points.append(Waypoint(x=X_neg[i], y=Y_neg[i]))
-
-        candidate_trajectory_params_list = [
-            SpiralInputParams(
-                x_0=front_X,
-                y_0=front_Y,
-                psi_0=vehicle_heading,
-                k_0=0.0,
-                x_f=point.x,
-                y_f=point.y,
-                psi_f=target_Psi,
-                k_f=0.0,
-                k_max=1,
-            )
-            for point in candidate_target_points
-        ]
-        # print("K_max: ", np.tan(self.vi.max_d) / self.vi.wheelbase)
-
-        return candidate_trajectory_params_list
 
     def plan_trajectories_concurrently(
         self,
         candidate_trajectory_params_list: list[SpiralInputParams],
         visible_obstacles: list[Rectangle],
-        step_size: float = 0.01,
+    ) -> (
+        bool,
+        SpiralTrajectory,
+        list[SpiralTrajectory],
+        list[SpiralTrajectory],
     ):
-        best_trajectory_optimisation_params = None
+        if not candidate_trajectory_params_list:
+            raise ValueError("No candidate trajectory parameters provided")
+
+        best_trajectory = None
         found_clear_trajectory = False
-        alternate_trajectories = []
-        invalid_trajectories = []
+        alternate_trajectories: list[SpiralTrajectory] = []
+        invalid_trajectories: list[SpiralTrajectory] = []
+
         with ThreadPoolExecutor() as executor:
             futures = {
                 executor.submit(
                     self.plan_alternate_trajectory,
                     trajectory_params,
                     visible_obstacles,
-                    step_size,
                 ): trajectory_params
                 for trajectory_params in candidate_trajectory_params_list
             }
 
             # Iterate over the futures to get the results in order
-            p_list = []
+            trajectory_clear: bool
+            trajectory: SpiralTrajectory
             for future in futures:
-                trajectory_clear, df, p = future.result()  # wait for the result
-                p_list.append(p)
+                trajectory_clear, trajectory = future.result()
+
                 if trajectory_clear:
-                    # possible trajetories are ordered by increasing lateral distance, so first one is the best
-                    if best_trajectory_optimisation_params is None:
-                        best_trajectory_optimisation_params = p
+                    # possible trajectories are ordered by increasing lateral distance, so first one is the best
+                    if best_trajectory is None:
+                        best_trajectory = trajectory
                     else:
-                        alternate_trajectories.append(df)
+                        alternate_trajectories.append(trajectory)
                 else:
-                    invalid_trajectories.append(df)
-        if best_trajectory_optimisation_params is None:
-            print("No clear trajectory found so setting it to p[0]", p_list[0])
-            best_trajectory_optimisation_params = p_list[0]
+                    invalid_trajectories.append(trajectory)
+
+        if best_trajectory is None:
+            print(
+                "No clear trajectory found so setting it to the first invalid trajectory in the list"
+            )
+            best_trajectory = invalid_trajectories[0]
             found_clear_trajectory = False
+
         return (
-            best_trajectory_optimisation_params,
             found_clear_trajectory,
+            best_trajectory,
             alternate_trajectories,
             invalid_trajectories,
         )
@@ -238,23 +301,17 @@ class TrajectoryPlanner:
         self,
         trajectory_params: SpiralInputParams,
         visible_obstacles: list[Rectangle],
-        step_size: float,
-    ):
-        p, df = create_spiral_interpolation(
-            *trajectory_params, ds=step_size, equal=False
-        )
-        circle_centers = df[["X", "Y"]].to_numpy()
-
-        trajectory_clear = not any(
-            np.any(
-                visible_obstacle.intersects_circles(
-                    circle_centers, 1.2 * self.vi.vp.width // 2
-                )  # 1.2 is a safety factor
-            )
-            for visible_obstacle in visible_obstacles
+    ) -> (bool, SpiralTrajectory):
+        trajectory = optimize_spiral_path_segment(
+            trajectory_params,
+            discretization_step_size=self.step_size_for_collision_check,
         )
 
-        return trajectory_clear, df, p
+        trajectory_clear = check_trajectory_clear(
+            trajectory.discretized, visible_obstacles, self.safety_margin_radius
+        )
+
+        return trajectory_clear, trajectory
 
     def compute_trajectory_frame_error(
         self, current_state: State, X_traj, Y_traj, Psi_traj, x_dot_traj
@@ -286,43 +343,35 @@ class TrajectoryPlanner:
         )
 
 
-def calc_final_speed(initial_speed, acceleration, distance):
-    """
-    Computes the new speed and its direction after accelerating or decelerating over a given distance
-    based on the initial speed and constant acceleration.
+def check_trajectory_clear(
+    trajectory_discretization: CurveDiscretization,
+    visible_obstacles: list[Rectangle],
+    margin_radius: float,
+):
+    circle_centers = np.column_stack(
+        (trajectory_discretization.X, trajectory_discretization.Y)
+    )
 
-    Parameters
-    ----------
-    initial_speed : float
-        The initial speed in m/s (negative if moving in the reverse direction).
-    acceleration : float
-        The acceleration in m/s^2 (can be negative if decelerating or moving in the reverse direction).
-    distance : float
-        The distance over which the acceleration occurs in meters (should be positive).
-
-    Returns
-    -------
-    float
-        The final speed in m/s, positive for forward movement and negative for reverse, based on the inputs.
-    """
-
-    squared_term = initial_speed**2 + 2 * acceleration * distance
-
-    # Compute the magnitude of the final speed safely.
-    final_speed = np.sqrt(squared_term) if squared_term >= 0 else 0.0
-
-    return final_speed
+    for obstacle in visible_obstacles:
+        if np.any(obstacle.intersects_circles(circle_centers, margin_radius)):
+            return False
+    return True
 
 
 def compute_velocity_profile(
-    v_0, v_min, v_max, a_long_max, a_long_min, a_lat_max, curve: pd.DataFrame
+    v_0,
+    v_min,
+    v_max,
+    a_long_max,
+    a_long_min,
+    a_lat_max,
+    trajectory_discretization: CurveDiscretization,
 ) -> np.ndarray:
-    k_max = (
-        curve.K.abs().max()
-    )  # maximum value of the curvature of the current trajectory
+    k_max = np.max(np.abs(trajectory_discretization.K))
+
     v_f = np.sqrt(
         a_lat_max / (k_max + 0.1)
-    )  # 0.1 is a small value to insane velocity at end of track, where k->0
+    )  # 0.1 is a small value to avoid insane velocity at end of track, where k->0 => v->inf
 
     v_min = max(min(v_0, v_f), v_min)
     v_max = min(max(v_0, v_f), v_max)
@@ -332,7 +381,9 @@ def compute_velocity_profile(
         2 * a_long
     )  # distance over which the acceleration/dec occurs
 
-    positions = np.column_stack((curve.X, curve.Y))
+    positions = np.column_stack(
+        (trajectory_discretization.X, trajectory_discretization.Y)
+    )
     distances = np.linalg.norm(
         np.diff(positions, axis=0), axis=1
     )  # Calculate distances between subsequent points
@@ -344,7 +395,7 @@ def compute_velocity_profile(
         cumulative_distances, accel_distance
     )  # Find index where acceleration distance is reached
 
-    velocity_profile = np.zeros_like(curve.X.values)
+    velocity_profile = np.zeros_like(trajectory_discretization.S)
     v_i = v_0
 
     a_long = abs(a_long) if v_f > v_0 else -abs(a_long)
@@ -359,3 +410,33 @@ def compute_velocity_profile(
     velocity_profile[velocity_ramp_end_index:] = v_f
 
     return velocity_profile
+
+
+def calc_final_speed(
+    initial_speed: float, acceleration: float, distance: float | np.ndarray
+) -> float | np.ndarray:
+    """
+    Computes the new speed and its direction after accelerating or decelerating over a given distance
+    based on the initial speed and constant acceleration.
+
+    Parameters
+    ----------
+    initial_speed : float
+        The initial speed in m/s (negative if moving in the reverse direction).
+    acceleration : float
+        The acceleration in m/s^2 (can be negative if decelerating or moving in the reverse direction).
+    distance : float | np.ndarray
+        The distance over which the acceleration occurs in meters (should be positive).
+
+    Returns
+    -------
+    float
+        The final speed in m/s, positive for forward movement and negative for reverse, based on the inputs.
+    """
+
+    squared_term = initial_speed**2 + 2 * acceleration * distance
+
+    # Compute the magnitude of the final speed safely.
+    final_speed = np.sqrt(squared_term) if squared_term >= 0 else 0.0
+
+    return final_speed

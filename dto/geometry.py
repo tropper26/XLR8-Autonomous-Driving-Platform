@@ -8,7 +8,9 @@ class Rectangle:
         self.width = width
         self.height = height
 
-    def intersects_circles(self, circle_centers: np.ndarray, circle_radii: np.ndarray):
+    def intersects_circles(
+        self, circle_centers: np.ndarray, circle_radii: np.ndarray | float
+    ) -> np.ndarray:
         """
         Check if any circle in the array intersects this rectangle using vectorized operations.
 

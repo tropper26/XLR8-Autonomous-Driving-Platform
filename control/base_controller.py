@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 
-import pandas as pd
-
 from control.base_params import BaseControllerParams
 from control.controller_viz_info import ControllerVizInfo
+from parametric_curves.trajectory import TrajectoryDiscretization
 from state_space.inputs.control_action import ControlAction
 from state_space.states.state import State
 from vehicle.vehicle_info import VehicleInfo
@@ -28,7 +27,7 @@ class BaseController(ABC):
         index,
         current_state: State,
         error_state: State,
-        trajectory_df: pd.DataFrame,
+        trajectory_discretization: TrajectoryDiscretization,
     ) -> (ControlAction, ControllerVizInfo | None):
         pass
 

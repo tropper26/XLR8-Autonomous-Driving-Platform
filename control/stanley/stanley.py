@@ -1,9 +1,9 @@
 import numpy as np
-import pandas as pd
 
 from control.base_controller import BaseController
 from control.controller_viz_info import ControllerVizInfo, Types
 from control.stanley.stanley_params import StanleyParams
+from parametric_curves.trajectory import TrajectoryDiscretization
 from state_space.inputs.control_action import ControlAction
 from state_space.states.state import State
 from vehicle.vehicle_info import VehicleInfo
@@ -34,7 +34,7 @@ class StanleyController(BaseController):
         index,
         current_state: State,
         error_state: State,
-        trajectory_df: pd.DataFrame,
+        trajectory_discretization: TrajectoryDiscretization,
     ) -> (ControlAction, ControllerVizInfo):
         cross_track_error = np.hypot(error_state.X, error_state.Y)
 

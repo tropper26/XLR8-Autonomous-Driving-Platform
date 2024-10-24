@@ -16,19 +16,19 @@ SpiralParams = tuple[float, float, float, float, float]
 
 class SpiralPathSegmentInfo(PathSegmentInfo[SpiralParams]):
     def __init__(
-            self,
-            start_point: WaypointWithHeading,
-            params: SpiralParams,
-            offset_distances: list[float],
+        self,
+        start_point: WaypointWithHeading,
+        params: SpiralParams,
+        offset_distances: list[float],
     ):
         super().__init__(CurveTypes.CUBIC_SPIRAL, start_point, params, offset_distances)
 
 
 class SpiralPathSegment(PathSegment):
     def __init__(
-            self,
-            spiral_info: Optional[SpiralPathSegmentInfo] = None,
-            curve_discretization: Optional[PathSegmentDiscretization] = None,
+        self,
+        spiral_info: Optional[SpiralPathSegmentInfo] = None,
+        curve_discretization: Optional[PathSegmentDiscretization] = None,
     ):
         super().__init__(
             curve_discretization=curve_discretization,
@@ -46,13 +46,13 @@ class SpiralPathSegment(PathSegment):
             y_0=self.curve_info.start_point.y,
             psi_0=self.curve_info.start_point.heading,
         )
-
+        
         s_values = np.asarray(s_values)
         x_values = np.asarray(x_values)
         y_values = np.asarray(y_values)
         psi_values = np.asarray(psi_values)
         k_values = np.asarray(k_values)
-
+        
         self._curve_discretization = PathSegmentDiscretization(
             S=s_values,
             X=x_values,

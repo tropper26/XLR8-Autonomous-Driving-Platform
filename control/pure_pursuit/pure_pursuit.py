@@ -1,9 +1,9 @@
 import numpy as np
-import pandas as pd
 
 from control.base_controller import BaseController
 from control.controller_viz_info import ControllerVizInfo, Types
 from control.pure_pursuit.pure_pursuit_params import PurePursuitParams
+from parametric_curves.trajectory import TrajectoryDiscretization
 from state_space.inputs.control_action import ControlAction
 from state_space.states.state import State
 from vehicle.vehicle_info import VehicleInfo
@@ -41,10 +41,10 @@ class PurePursuitController(BaseController):
         index,
         current_state: State,
         error_state: State,
-        trajectory_df: pd.DataFrame,
+        trajectory_discretization: TrajectoryDiscretization,
     ) -> (ControlAction, ControllerVizInfo):
         steering_angle, target_X, target_Y = self.pure_pursuit_control(
-            current_state, trajectory_df
+            current_state, trajectory_discretization
         )
 
         steering_angle = np.clip(steering_angle, self.vi.min_d, self.vi.max_d)
@@ -64,19 +64,21 @@ class PurePursuitController(BaseController):
     def proportional_control(self, velocity_error: float):
         return self.params.kp * velocity_error
 
-    def pure_pursuit_control(self, current_state: State, trajectory_df: pd.DataFrame):
+    def pure_pursuit_control(
+        self, current_state: State, trajectory_discretization: TrajectoryDiscretization
+    ):
         rear_X, rear_Y = self.vi.rear_axle_position(current_state)
 
-        current_arc_length = trajectory_df.iloc[0]["S"]
-        target_index = np.searchsorted(
-            trajectory_df.S.values,
-            current_arc_length + self.look_ahead_distance(current_state.x_dot),
-        )
-        if target_index >= trajectory_df.shape[0]:
-            target_index = trajectory_df.shape[0] - 1
+        target_index = int(trajectory_discretization.S.searchsorted(
+            trajectory_discretization.S[0]
+            + self.look_ahead_distance(current_state.x_dot)
+        ))
 
-        target_X = trajectory_df.iloc[target_index]["X"]
-        target_Y = trajectory_df.iloc[target_index]["Y"]
+        target_index = min(
+            target_index, len(trajectory_discretization) - 1
+        )  # Clamp target index to the last index if it exceeds
+
+        target_X, target_Y = trajectory_discretization.X[target_index], trajectory_discretization.Y[target_index]
 
         heading_error = (
             np.arctan2(target_Y - rear_Y, target_X - rear_X) - current_state.Psi

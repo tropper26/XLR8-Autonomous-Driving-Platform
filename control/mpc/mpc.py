@@ -6,6 +6,7 @@ from control.base_controller import BaseController
 from control.controller_viz_info import ControllerVizInfo, Types
 from control.mpc.cost_function import CostFunction
 from control.mpc.mpc_params import MPCParams
+from parametric_curves.trajectory import TrajectoryDiscretization
 from state_space.augmented_state_space import AugmentedStateSpace
 from state_space.inputs.control_action import ControlAction
 from state_space.models.kinematic_bicycle_model import KinematicBicycleModel
@@ -89,14 +90,11 @@ class MPC(BaseController):
         index,
         current_state: State,
         error_state: State,
-        trajectory_df: pd.DataFrame,
+        trajectory_discretization: TrajectoryDiscretization,
     ) -> (ControlAction, ControllerVizInfo | None):
         self.aug_state_space.update_based_on_obervations(current_state.copy())
-        trajectory_df = trajectory_df[
-            ["X", "Y", "Psi", "x_dot"]
-        ]  # remove unnecessary columns
 
-        max_length = trajectory_df.shape[0]
+        max_length = len(trajectory_discretization)
         index = 0
         index_horizon = index + self.params.horizon_period
         if index_horizon > max_length:
@@ -111,14 +109,14 @@ class MPC(BaseController):
         state_space_over_horizon = self.compute_state_over_horizon()
 
         # extract the reference trajectory over the same horizon
-        ref_over_horizon = trajectory_df.iloc[index:index_horizon]
+        ref_over_horizon = trajectory_discretization[index:index_horizon] #TODO: the rest of this code has not been updated to the new TrajectoryDiscretization API
         print("ref_over_horizon: ", ref_over_horizon)
 
         # visualize
         aug_states: np.ndarray = state_space_over_horizon.X_aug.values
         X = np.array([aug_state.X for aug_state in aug_states])
         Y = np.array([aug_state.Y for aug_state in aug_states])
-        controler_viz = ControllerVizInfo(
+        controller_viz = ControllerVizInfo(
             viz_type=Types.Line,
             X=X,
             Y=Y,
@@ -166,7 +164,7 @@ class MPC(BaseController):
 
         self.aug_state_space.update_control_input(change_in_control_input)
 
-        return self.aug_state_space.U, controler_viz
+        return self.aug_state_space.U, controller_viz
 
     def validate_and_optimize_cost_function(self, G_horizon, Hdb, f_T, h_horizon):
         is_symmetric = np.allclose(Hdb, Hdb.T, atol=1e-8)

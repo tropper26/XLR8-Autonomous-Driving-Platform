@@ -5,15 +5,10 @@ import pandas as pd
 from pandas import DataFrame
 
 from dto.waypoint import Waypoint
-from local_planner.trajectories.parametric_trajectories import (
-    generate_cubic_spline_trajectory,
-    generate_cubic_spline_v2,
-)
-from local_planner.trajectories.simple_trajectories import (
-    generate_easy_handmade_trajectory,
-    generate_medium_handmade_trajectory,
-    generate_hard_handmade_trajectory,
-)
+from local_planner.trajectories.parametric_trajectories import generate_cubic_spline_trajectory, \
+    generate_cubic_spline_v2
+from local_planner.trajectories.simple_trajectories import generate_easy_handmade_trajectory, \
+    generate_medium_handmade_trajectory, generate_hard_handmade_trajectory
 
 
 def calculate_body_velocities(X, Y, sampling_time):

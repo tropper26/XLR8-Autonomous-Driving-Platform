@@ -4,7 +4,7 @@ import networkx as nx
 from scipy.spatial import distance
 
 from dto.waypoint import Waypoint, WaypointWithHeading
-from global_planner.spacial_grid import SpatialGrid
+from rust_switch import SpatialGrid
 
 
 def is_point_to_left(start: Waypoint, end: Waypoint, point: Waypoint) -> bool:
@@ -91,7 +91,7 @@ class RoadNetwork:
         self.grid = SpatialGrid(min_x, max_x, min_y, max_y, grid_cell_count)
 
         for node_id, data in self.G.nodes(data=True):
-            self.grid.insert_node(node_id, data["x"], data["y"])
+            self.grid.insert_node(int(node_id), data["x"], data["y"])
 
     @property
     def nodes(self):
@@ -141,7 +141,7 @@ class RoadNetwork:
         ]
 
     def get_waypoints_based_on_ids(
-        self, node_ids: List[str]
+        self, node_ids: List[int]
     ) -> List[WaypointWithHeading]:
         if not node_ids:
             return []
@@ -157,7 +157,6 @@ class RoadNetwork:
         ]
 
     def calculate_bounds(self):
-        """Calculate bounds and cell sizes of the graph."""
         min_x = min_y = float("inf")
         max_x = max_y = float("-inf")
 
@@ -263,4 +262,4 @@ class RoadNetwork:
         nx.write_graphml(self.G, file_path)
 
     def read_graphml(self, file_path: str):
-        return nx.read_graphml(file_path)
+        return nx.read_graphml(file_path, node_type=int)

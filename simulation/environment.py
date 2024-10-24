@@ -1,13 +1,14 @@
 import numpy as np
-import pandas as pd
 
 from dto.coord_transform import path_to_inertial_frame, inertial_to_path_frame
 from dto.geometry import Rectangle
-from dto.path_bounds import WorldBounds
+from dto.world_bounds import WorldBounds
 from dto.waypoint import WaypointWithHeading
-from global_planner.spacial_grid import SpatialGrid
+from global_planner.path_planning.path import Path
+from rust_switch import SpatialGrid
+from parametric_curves.path_segment import PathSegmentDiscretization
 from simulation.reward_manager import RewardManager
-from simulation.simulation_info import EndCondition
+from simulation.simulation_result import EndCondition
 from state_space.inputs.control_action import ControlAction
 from state_space.models.generic_model import GenericModel
 from state_space.state_space import StateSpace
@@ -16,26 +17,27 @@ from state_space.states.state import State
 
 class Environment:
     def __init__(
-        self,
-        reward_manager: RewardManager,
-        vehicle_model: GenericModel,
-        simulation_x_limit: float,
-        simulation_y_limit: float,
-        full_ref_path: pd.DataFrame,
-        path_obstacles: list[Rectangle],
-        path_width: float,
-        sampling_time: float,
-        max_visible_distance: float,
-        grid_cell_count: tuple[int, int] = (32, 32),
-        use_random_offset_starting_position=False,
-        training=False,
+            self,
+            reward_manager: RewardManager,
+            vehicle_model: GenericModel,
+            simulation_x_limit: float,
+            simulation_y_limit: float,
+            path: Path,
+            path_obstacles: list[Rectangle],
+            path_width: float,
+            sampling_time: float,
+            max_visible_distance: float,
+            grid_cell_count: tuple[int, int] = (32, 32),
+            use_random_offset_starting_position=False,
+            training=False,
     ):
         self.reward_manager = reward_manager
         self.vehicle_model = vehicle_model
         self.simulation_x_limit = simulation_x_limit
         self.simulation_y_limit = simulation_y_limit
         self.sampling_time = sampling_time
-        self.full_ref_path = full_ref_path
+        self.path = path
+        self.path_discretization = path.discretized
         self.path_obstacles = path_obstacles
         self.observed_path_width = path_width
         self.max_visible_distance = max_visible_distance
@@ -43,14 +45,15 @@ class Environment:
         self.use_random_offset_starting_position = use_random_offset_starting_position
         self.training = training
 
-        self.observed_path = None
+        self.observed_path_discretization = None
         self.current_closest_index_on_path = 0
         self.previous_control_action = None
+        self.visible_obstacles = []
 
         self.goal_location = WaypointWithHeading(
-            x=full_ref_path.X.iloc[-1],
-            y=full_ref_path.Y.iloc[-1],
-            heading=full_ref_path.Psi.iloc[-1],
+            x=self.path_discretization.X[-1],
+            y=self.path_discretization.Y[-1],
+            heading=self.path_discretization.Psi[-1],
         )
 
         self.setup_grid(grid_cell_count)
@@ -58,9 +61,10 @@ class Environment:
         self.initialize_vehicle_position()
 
     def initialize_vehicle_position(self):
-        S, X_path, Y_path, Psi_path, K = self.full_ref_path.iloc[
-            self.current_closest_index_on_path
-        ][["S", "X", "Y", "Psi", "K"]]
+        S, X_path, Y_path, Psi_path, K = self.path_discretization.row_at(
+            index=self.current_closest_index_on_path,
+            columns=["S", "X", "Y", "Psi", "K"],
+        )
 
         if self.use_random_offset_starting_position:
             Y_vehicle_path_frame = np.random.uniform(-0.8, 0.8)
@@ -130,9 +134,9 @@ class Environment:
             grid_cell_count,
         )
 
-        for i in range(len(self.full_ref_path)):
+        for index_in_path in range(len(self.path_discretization)):
             self.grid.insert_node(
-                i, self.full_ref_path.X[i], self.full_ref_path.Y[i]
+                index_in_path, self.path_discretization.X[index_in_path], self.path_discretization.Y[index_in_path]
             )
 
     @property
@@ -148,7 +152,7 @@ class Environment:
 
     def reset(self):
         if (
-            not self.training
+                not self.training
         ):  # if training, reset the vehicle position to the start of the path
             self.current_closest_index_on_path = 0
 
@@ -171,7 +175,7 @@ class Environment:
             return True
         return False
 
-    def get_observation(self) -> (int, pd.DataFrame):
+    def get_observation(self) -> (int, Path, float, list[Rectangle]):
         front_wheel_X, front_wheel_Y = self.plant.model.vp.front_axle_position(
             self.plant.X
         )
@@ -180,16 +184,17 @@ class Environment:
             front_wheel_X, front_wheel_Y
         )
 
-        current_arclength = self.full_ref_path.iloc[
-            self.current_closest_index_on_path
-        ].S
-        target_index = np.searchsorted(
-            self.full_ref_path.S.values, current_arclength + self.max_visible_distance
-        )  # get the first index that is ahead of the look ahead distance
+        current_length = self.path_discretization.S[self.current_closest_index_on_path]
 
-        self.observed_path = self.full_ref_path[
-            self.current_closest_index_on_path : target_index + 1
-        ]  # include the target point
+        # get the first index that is ahead of the look ahead distance
+        target_index = int(self.path_discretization.S.searchsorted(
+            current_length + self.max_visible_distance
+        ))
+
+        # Slice the DataFrame between the current closest index and the target index
+        self.observed_path_discretization = self.path_discretization[
+            self.current_closest_index_on_path:target_index
+        ]
 
         self.visible_obstacles = []
         for obstacle in self.path_obstacles:
@@ -197,20 +202,20 @@ class Environment:
             closest_y = np.clip(front_wheel_Y, obstacle.y, obstacle.y + obstacle.height)
 
             if (front_wheel_X - closest_x) ** 2 + (
-                front_wheel_Y - closest_y
-            ) ** 2 < self.max_visible_distance**2:
+                    front_wheel_Y - closest_y
+            ) ** 2 < self.max_visible_distance ** 2:
                 self.visible_obstacles.append(obstacle)
 
         return (
             self.current_closest_index_on_path,
-            self.observed_path,
+            self.observed_path_discretization,
             self.observed_path_width,
             self.visible_obstacles,
         )
 
     def step(
-        self, control_action: ControlAction, base_noise_scale=0.0
-    ) -> (State, ControlAction, int, pd.DataFrame):
+            self, control_action: ControlAction, base_noise_scale=0.0
+    ) -> tuple[State, ControlAction, int, PathSegmentDiscretization, float, list[Rectangle]]:
         self.plant.update_control_input(control_action)
         self.plant.propagate_model(self.sampling_time)
 
@@ -221,7 +226,7 @@ class Environment:
                 self.plant.X,
                 self.plant.U,
                 self.current_closest_index_on_path,
-                self.observed_path,
+                self.observed_path_discretization,
                 self.observed_path_width,
                 self.visible_obstacles,
             )
@@ -232,7 +237,7 @@ class Environment:
             self.plant.X + state_noise,
             self.plant.U + control_noise,
             self.current_closest_index_on_path,
-            self.observed_path,
+            self.observed_path_discretization,
             self.observed_path_width,
             self.visible_obstacles,
         )
@@ -270,9 +275,9 @@ class Environment:
         return state_noise, control_noise
 
     def check_termination(
-        self,
-        error_state_path_frame: State,
-        terminate_early=False,
+            self,
+            error_state_path_frame: State,
+            terminate_early=False,
     ) -> (EndCondition, (float, str)):
         if self.destination_reached():
             return (
@@ -291,8 +296,8 @@ class Environment:
 
         if terminate_early:
             if (
-                abs(error_Y_path_frame)
-                > self.reward_manager.max_lateral_error_threshold
+                    abs(error_Y_path_frame)
+                    > self.reward_manager.max_lateral_error_threshold
             ):
                 return (
                     EndCondition.MAX_LATERAL_ERROR,
@@ -306,8 +311,8 @@ class Environment:
                 )
 
             if (
-                abs(error_x_dot_path_frame)
-                > self.reward_manager.max_velocity_error_threshold
+                    abs(error_x_dot_path_frame)
+                    > self.reward_manager.max_velocity_error_threshold
             ):
                 return (
                     EndCondition.MAX_VELOCITY_ERROR,

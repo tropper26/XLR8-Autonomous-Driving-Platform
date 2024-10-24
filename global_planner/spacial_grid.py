@@ -6,12 +6,12 @@ from sortedcontainers import SortedList
 
 class SpatialGrid:
     def __init__(
-            self,
-            min_x: float,
-            max_x: float,
-            min_y: float,
-            max_y: float,
-            grid_cell_count: tuple[int, int],
+        self,
+        min_x: float,
+        max_x: float,
+        min_y: float,
+        max_y: float,
+        grid_cell_count: tuple[int, int],
     ):
         self.min_x = min_x
         self.min_y = min_y
@@ -43,13 +43,13 @@ class SpatialGrid:
                 del self.grid[key]
 
     def update_node(
-            self, node_id: int, old_x: float, old_y: float, new_x: float, new_y: float
+        self, node_id: int, old_x: float, old_y: float, new_x: float, new_y: float
     ):
         self.remove_node(node_id, old_x, old_y)
         self.insert_node(node_id, new_x, new_y)
 
     def get_closest_node(
-            self, x: float, y: float, threshold: float = float("inf")
+        self, x: float, y: float, threshold: float = float("inf")
     ) -> Optional[tuple[int, float, float]]:
         """
         Get the closest node to the given coordinates (x, y) within a specified threshold.
@@ -70,7 +70,7 @@ class SpatialGrid:
             range_search = max(
                 int(threshold / self.cell_size_x) + 1,
                 int(threshold / self.cell_size_y) + 1,
-                )
+            )
             all_keys = (
                 (center_key[0] + dx, center_key[1] + dy)
                 for dx in range(-range_search, range_search + 1)

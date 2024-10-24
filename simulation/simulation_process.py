@@ -4,10 +4,13 @@ import time
 from application.application_status import ApplicationStatus
 from control.base_controller import BaseController
 from control.base_params import BaseControllerParams
+from global_planner.path_planning.path import Path
 from local_planner.trajectory_planner import TrajectoryPlanner
 from simulation.environment import Environment
+from simulation.iteration_info import IterationInfoBatch
 from simulation.simulation import Simulation
 from simulation.simulation_info import SimulationInfo
+from simulation.simulation_result import SimulationResult
 from state_space.models.generic_model import GenericModel
 from vehicle.vehicle_info import VehicleInfo
 from vehicle.vehicle_params import VehicleParams
@@ -19,7 +22,7 @@ class SimulationProcess(mp.Process):
         simulation_info: SimulationInfo,
         app_status: ApplicationStatus,
         result_queue: mp.Queue,
-        params_pipe: mp.Pipe,
+        controller_params_pipe: mp.Pipe,
         sim_run_count: mp.Value = mp.Value("i", 1),
         visualization_interval: mp.Value = mp.Value("i", 1),
     ):
@@ -27,9 +30,9 @@ class SimulationProcess(mp.Process):
         self.simulation_info = simulation_info
         self.app_status = app_status
         self.result_queue = result_queue
-        self.params_pipe = params_pipe
+        self.controller_params_pipe = controller_params_pipe
         self.sim_run_count = sim_run_count
-        self.visualization_interval = visualization_interval
+        self.viz_interval = visualization_interval
 
         self.daemon = True
 
@@ -38,12 +41,15 @@ class SimulationProcess(mp.Process):
 
     def run(self):
         try:
-            vp, simulation = simulation_setup(self.simulation_info, self.app_status)
+            vp, path, simulation = simulation_setup(
+                self.simulation_info, self.app_status
+            )
             new_params = None
+
             while self.running.value:
-                if self.params_pipe.poll():
-                    while self.params_pipe.poll():
-                        new_params = self.params_pipe.recv()
+                if self.controller_params_pipe.poll():
+                    while self.controller_params_pipe.poll():  # Get the newest params
+                        new_params = self.controller_params_pipe.recv()
                         print("Received new controller parameters: ", new_params)
                     simulation.controller.params = new_params
 
@@ -51,15 +57,25 @@ class SimulationProcess(mp.Process):
                     print(
                         f"Running simulation {self.completed_runs.value}:{self.sim_run_count.value}"
                     )
-                    sim_result = simulation.run_sim()
+                    for (end_condition, iteration_infos) in simulation.run_sim():
+                        sim_result = SimulationResult(
+                            simulation_info=self.simulation_info,
+                            path=path,
+                            vehicle_params_for_visualization=vp,
+                            end_condition=end_condition,
+                            iteration_infos=iteration_infos,
+                            iteration_info_batch=IterationInfoBatch.from_iteration_infos(
+                                iteration_infos
+                            ),
+                            run_index=self.completed_runs.value,
+                        )
+                        sim_result.run_index = self.completed_runs.value
+                        sim_result.vehicle_params_for_visualization = vp
+                        sim_result.simulation_info = self.simulation_info
+                        # print("Got Yield")
+                        # self.result_queue.put(sim_result)
 
-                    sim_result.run_index = self.completed_runs.value
-                    sim_result.vp = vp
-                    sim_result.simulation_info = self.simulation_info
-                    if (
-                        self.completed_runs.value % self.visualization_interval.value
-                        == 0
-                    ):
+                    if self.completed_runs.value % self.viz_interval.value == 0:
                         self.result_queue.put(sim_result)
                     self.completed_runs.value += 1
                 else:
@@ -76,7 +92,7 @@ class SimulationProcess(mp.Process):
 
 def simulation_setup(
     simulation_info: SimulationInfo, current_app_status: ApplicationStatus
-) -> tuple[VehicleParams, Simulation]:
+) -> tuple[VehicleParams, Path, Simulation]:
     vp: VehicleParams = current_app_status.vehicle_params_lookup[
         simulation_info.vehicle_params_name
     ]
@@ -105,7 +121,7 @@ def simulation_setup(
     trajectory_planner = TrajectoryPlanner(
         vi=vi,
         min_trajectory_length=current_app_status.min_trajectory_length,
-        possible_trajectory_step_size=current_app_status.possible_trajectory_step_size,
+        step_size_for_collision_check=current_app_status.possible_trajectory_step_size,
     )
 
     env = Environment(
@@ -113,7 +129,7 @@ def simulation_setup(
         vehicle_model=vehicle_model,
         simulation_x_limit=current_app_status.world_x_limit,
         simulation_y_limit=current_app_status.world_y_limit,
-        full_ref_path=current_app_status.ref_path_df,
+        path=current_app_status.ref_path,
         path_obstacles=current_app_status.path_obstacles,
         path_width=current_app_status.path_width,
         sampling_time=simulation_info.sampling_time,
@@ -123,14 +139,18 @@ def simulation_setup(
         training=False,
     )
 
-    return vp, Simulation(
-        controller=controller,
-        trajectory_planner=trajectory_planner,
-        env=env,
-        kalman_filter_model=vehicle_model
-        if simulation_info.use_kalman_filter
-        else None,
-        base_noise_scale=simulation_info.base_noise_scale,
-        sampling_time=simulation_info.sampling_time,
-        terminate_early=False,
+    return (
+        vp,
+        current_app_status.ref_path,
+        Simulation(
+            controller=controller,
+            trajectory_planner=trajectory_planner,
+            env=env,
+            kalman_filter_model=(
+                vehicle_model if simulation_info.use_kalman_filter else None
+            ),
+            base_noise_scale=simulation_info.base_noise_scale,
+            sampling_time=simulation_info.sampling_time,
+            terminate_early=False,
+        ),
     )

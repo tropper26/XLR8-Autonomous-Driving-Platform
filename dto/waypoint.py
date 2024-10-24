@@ -1,24 +1,13 @@
-import numpy as np
-
-
 class Waypoint:
-    def __init__(self, x: float, y: float, id: int = None):
-        self.id = id
-        self._data = np.array([x, y])
+    __slots__ = ('x', 'y', 'index_in_route')
 
-    @property
-    def x(self):
-        return self._data[0]
-
-    @property
-    def y(self):
-        return self._data[1]
-
-    def __getitem__(self, index):
-        return self._data[index]
+    def __init__(self, x: float, y: float, index_in_route: int = None):
+        self.index_in_route = index_in_route
+        self.x = x
+        self.y = y
 
     def __str__(self) -> str:
-        return f"Waypoint(id={self.id}, x={self.x}, y={self.y})"
+        return f"Waypoint(id={self.index_in_route}, x={self.x}, y={self.y})"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -26,20 +15,14 @@ class Waypoint:
     def __eq__(self, other) -> bool:
         if not isinstance(other, Waypoint):
             return NotImplemented
-        return np.array_equal(self._data, other._data)
-
+        return self.x == other.x and self.y == other.y
 
 class WaypointWithHeading(Waypoint):
-    def __init__(self, x: float, y: float, heading: float, id: int = None):
-        super().__init__(x, y, id)
-        self._data = np.array([x, y, heading])
+    __slots__ = ('heading')
 
-    @property
-    def heading(self):
-        return self._data[2]
+    def __init__(self, x: float, y: float, heading: float, index_in_route: int = None):
+        super().__init__(x, y, index_in_route)
+        self.heading = heading
 
     def __str__(self) -> str:
-        return f"WaypointWithHeading(id={self.id}, x={self.x}, y={self.y}, heading={self.heading})"
-
-    def __hash__(self) -> int:
-        return hash(tuple(self._data))
+        return f"WaypointWithHeading(id={self.index_in_route}, x={self.x}, y={self.y}, heading={self.heading})"

@@ -71,7 +71,7 @@ class SACController(BaseController):
         index,
         current_state: State,
         error_state: State,
-        trajectory_df: pd.DataFrame,
+        trajectory_discretization: pd.DataFrame,
     ) -> (ControlAction, ControllerVizInfo):
         self.counter += 1
         if self.counter % 4 == 0:
@@ -84,7 +84,7 @@ class SACController(BaseController):
                 error_state.Psi,
                 error_state.x_dot,
                 self.previous_control_action.d,
-                trajectory_df.iloc[0].K,
+                trajectory_discretization.iloc[0].K,
             ]
         )
 
