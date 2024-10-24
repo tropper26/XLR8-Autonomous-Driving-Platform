@@ -48,13 +48,13 @@ class PathCanvas(ZoomableGraphicsView):
         self.current_app_status = current_app_status
 
         self.path_manager = PathManager(
-            left_lane_count=1,
-            right_lane_count=1,
+            left_lane_count=self.current_app_status.lane_count,
+            right_lane_count=0,
             lane_widths=[
                 self.current_app_status.lane_width
-                for _ in range(self.current_app_status.lane_count + 2 + 1)
+                for _ in range(self.current_app_status.lane_count + 1)
             ],
-        )  # TODO update UI to be able to set lane widths
+        )
 
         self.scene = QGraphicsScene()
         self.setScene(self.scene)
@@ -408,8 +408,8 @@ class PathCanvas(ZoomableGraphicsView):
         return waypoint_object
 
     def draw_discretized_segment(self, segment: PathSegment):
-        # TODO: Implement curve selection
-        curves_to_show = [True, False, True, False, True, False, True]  # list of booleans, which curves to show
+        curves_to_show = [i % 2 == 0 for i in range(segment.discretized.lateral_X.shape[1])]  # list of booleans, which curves to show
+        print(curves_to_show)
         # Use boolean list to select the curves (columns) to show
         lateral_X_to_show = segment.discretized.lateral_X[:, curves_to_show].flatten()
         lateral_Y_to_show = segment.discretized.lateral_Y[:, curves_to_show].flatten()

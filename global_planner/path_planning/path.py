@@ -46,19 +46,31 @@ def lane_offsets(
     offsets = []
     cumulative_offset = central_lane_half_width  # Start at the center
 
-    for i in range(lane_count):
-        lane_width = lane_widths[start_idx + i]
-
+    if direction > 0: # for left
         # Shoulder offset (before lane)
         offsets.append(direction * cumulative_offset)
 
-        # Central line offset of the lane
-        cumulative_offset += lane_width / 2
-        offsets.append(direction * cumulative_offset)
+        for i in range(lane_count):
+            lane_width = lane_widths[start_idx + i]
 
-        # End of lane offset (after lane)
-        cumulative_offset += lane_width / 2
-        offsets.append(direction * cumulative_offset)
+            # Central line offset of the lane
+            cumulative_offset += lane_width / 2
+            offsets.append(direction * cumulative_offset)
+
+            # End of lane offset (after lane)
+            cumulative_offset += lane_width / 2
+            offsets.append(direction * cumulative_offset)
+    else: # for right
+        for i in range(lane_count):
+            lane_width = lane_widths[start_idx + i]
+
+            # Central line offset of the lane
+            cumulative_offset += lane_width / 2
+            offsets.append(direction * cumulative_offset)
+
+            # End of lane offset (after lane)
+            cumulative_offset += lane_width / 2
+            offsets.append(direction * cumulative_offset)
 
     return offsets
 

@@ -131,7 +131,6 @@ def simulation_setup(
         simulation_y_limit=current_app_status.world_y_limit,
         path=current_app_status.ref_path,
         path_obstacles=current_app_status.path_obstacles,
-        path_width=current_app_status.path_width,
         sampling_time=simulation_info.sampling_time,
         grid_cell_count=current_app_status.environment_grid_cell_count,
         max_visible_distance=current_app_status.max_visible_distance,

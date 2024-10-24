@@ -104,6 +104,12 @@ class SimulationWidget(QWidget):
                     )
                     self.current_sim_result_index = 0
                     self.selectedResultChanged.emit(result.copy())
+                # else:
+                #     for index, elem in enumerate(self.results):
+                #         if elem.run_index == result.run_index:
+                #             self.results[index] = result
+                #             self.sim_visualizer_widget.update_results_to_visualize([result.copy()])
+                #             break
 
                 self.results.append(result.copy())
                 self.run_label.setText(
