@@ -230,15 +230,26 @@ class SimulationVisualizerWidget(QWidget):
         main_container_widget = QWidget(self)
         main_container_layout = QVBoxLayout(main_container_widget)
         layout.addWidget(main_container_widget, stretch=stretch)
+
+
+        # self.main_plot_fig = plt.figure(
+        #     figsize=(16, 9), dpi=120, facecolor=(0.8, 0.8, 0.8)
+        # )
+        # self.gs = gridspec.GridSpec(12, 12)
+        #
+        # self.setup_sub_plots()
+        #
+        # self.main_plot_ax = self.main_plot_fig.add_subplot(self.gs[3:, :])
+        # self.main_plot_ax.set_facecolor((0.9, 0.9, 0.9))
+
+
         self.main_plot_fig = plt.figure(
             figsize=(16, 9), dpi=120, facecolor=(0.8, 0.8, 0.8)
         )
-        self.gs = gridspec.GridSpec(12, 12)
-
-        self.setup_sub_plots()
-
-        self.main_plot_ax = self.main_plot_fig.add_subplot(self.gs[3:, :])
+        self.main_plot_ax = self.main_plot_fig.add_subplot(1, 1, 1)
         self.main_plot_ax.set_facecolor((0.9, 0.9, 0.9))
+
+
 
         main_plot_widget = QWidget(self)
         main_plot_layout = QVBoxLayout(main_plot_widget)
