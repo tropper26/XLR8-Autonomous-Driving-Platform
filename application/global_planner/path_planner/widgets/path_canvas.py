@@ -1,3 +1,4 @@
+import math
 import random
 from enum import Enum, auto
 
@@ -459,6 +460,13 @@ class PathCanvas(ZoomableGraphicsView):
         ]
         self.obstaclesChanged.emit(obstacles)
 
+    def erase_obstacles(self):
+        self.setUpdatesEnabled(False)
+        for obstacle in self.obstacles:
+            self.scene.removeItem(obstacle)
+        self.obstacles = []
+        self.setUpdatesEnabled(True)
+
     def add_obstacle(self, x, y, width, height, color=QColor("black")):
         rect = DraggableRect(x, y, width, height, color)
         rect.valueChanged.connect(self.emit_new_obstacles)
@@ -598,13 +606,15 @@ class PathCanvas(ZoomableGraphicsView):
 
     def spawn_random_obstacles(self, num_obstacles: int):
         for segment in self.path_manager.path_segments:
-            for _ in range(num_obstacles):
+            for _ in range(math.floor(num_obstacles / len(self.path_manager.path_segments))):
                 index = random.randrange(0, len(segment.discretized))
-                x = segment.discretized.X[index]
-                y = segment.discretized.Y[index]
+                curve_count = segment.discretized.lateral_X.shape[1]
+                curve_index = random.randrange(0, curve_count)
+                x = segment.discretized.lateral_X[index, curve_index]
+                y = segment.discretized.lateral_Y[index, curve_index]
                 x, y = self.world_to_canvas(x, y)
-                width = random.randrange(2, 10)
-                height = random.randrange(2, 10)
+                width = random.randrange(10, 50)
+                height = random.randrange(10, 50)
                 self.obstacles.append(self.add_obstacle(x, y, width, height))
 
         self.emit_new_obstacles()

@@ -259,8 +259,10 @@ class PathPlannerWidget(QWidget):
         try:
             random_obstacles_count = int(value)
             if random_obstacles_count <= 0:
-                raise ValueError
+                return
             self.current_app_status.random_obstacles_count = random_obstacles_count
+            self.path_canvas.erase_obstacles()
+            self.path_canvas.spawn_random_obstacles(random_obstacles_count)
         except ValueError:
             pass  # Handle or log error appropriately
 
