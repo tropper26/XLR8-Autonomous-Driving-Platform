@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 
+import numpy as np
+
 from control.base_params import BaseControllerParams
-from control.controller_viz_info import ControllerVizInfo
+from control.controller_viz_info import ControllerVizInfo, Types
 from parametric_curves.trajectory import TrajectoryDiscretization
 from state_space.inputs.control_action import ControlAction
 from state_space.states.state import State
@@ -20,6 +22,17 @@ class BaseController(ABC):
         starting_control_action: ControlAction,
     ):
         pass
+
+    def stop(self,current_state: State, time_step: float) -> (ControlAction, ControllerVizInfo):
+        acceleration = - 1 / time_step * current_state.x_dot
+
+        return ControlAction(a=acceleration, d=0), ControllerVizInfo(
+            viz_type=Types.Point,
+            X=np.array([]),
+            Y=np.array([]),
+            ref_X=np.array([]),
+            ref_Y=np.array([]),
+        )
 
     @abstractmethod
     def compute_action(

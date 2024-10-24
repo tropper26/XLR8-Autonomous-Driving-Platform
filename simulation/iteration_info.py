@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from control.controller_viz_info import ControllerVizInfo
+from dto.geometry import Rectangle
 from parametric_curves.spiral import ParametricSpiral
 import numpy as np
 
@@ -43,6 +44,8 @@ class IterationInfo:
         "reference_trajectory",
         "alternate_trajectories",
         "invalid_trajectories",
+        "visible_obstacles",
+        "found_clear_trajectory",
     ]
 
     time: float
@@ -81,45 +84,50 @@ class IterationInfo:
     reference_trajectory: ParametricSpiral
     alternate_trajectories: list[ParametricSpiral]
     invalid_trajectories: list[ParametricSpiral]
+    visible_obstacles: list[Rectangle]
+    found_clear_trajectory: bool
 
     def __init__(
-        self,
-        time: float = None,
-        execution_time: float = None,
-        X: float = None,
-        Y: float = None,
-        Psi: float = None,
-        x_dot: float = None,
-        y_dot: float = None,
-        psi_dot: float = None,
-        a: float = None,
-        d: float = None,
-        S_ref: float = None,
-        K_ref: float = None,
-        X_ref: float = None,
-        Y_ref: float = None,
-        Psi_ref: float = None,
-        x_dot_ref: float = None,
-        y_dot_ref: float = None,
-        psi_dot_ref: float = None,
-        error_X: float = None,
-        error_Y: float = None,
-        error_Psi: float = None,
-        error_x_dot: float = None,
-        error_y_dot: float = None,
-        error_psi_dot: float = None,
-        closest_path_point_index: int = None,
-        S_path: float = None,
-        K_path: float = None,
-        X_path: float = None,
-        Y_path: float = None,
-        Psi_path: float = None,
-        reward: float = None,
-        reward_explanation: str = None,
-        controller_viz_info: ControllerVizInfo = None,
-        reference_trajectory: ParametricSpiral = None,
-        alternate_trajectories: list[ParametricSpiral] = None,
-        invalid_trajectories: list[ParametricSpiral] = None,
+            self,
+            time: float = None,
+            execution_time: float = None,
+            X: float = None,
+            Y: float = None,
+            Psi: float = None,
+            x_dot: float = None,
+            y_dot: float = None,
+            psi_dot: float = None,
+            a: float = None,
+            d: float = None,
+            S_ref: float = None,
+            K_ref: float = None,
+            X_ref: float = None,
+            Y_ref: float = None,
+            Psi_ref: float = None,
+            x_dot_ref: float = None,
+            y_dot_ref: float = None,
+            psi_dot_ref: float = None,
+            error_X: float = None,
+            error_Y: float = None,
+            error_Psi: float = None,
+            error_x_dot: float = None,
+            error_y_dot: float = None,
+            error_psi_dot: float = None,
+            closest_path_point_index: int = None,
+            S_path: float = None,
+            K_path: float = None,
+            X_path: float = None,
+            Y_path: float = None,
+            Psi_path: float = None,
+            reward: float = None,
+            reward_explanation: str = None,
+            controller_viz_info: ControllerVizInfo = None,
+            reference_trajectory: ParametricSpiral = None,
+            alternate_trajectories: list[ParametricSpiral] = None,
+            invalid_trajectories: list[ParametricSpiral] = None,
+            visible_obstacles: list[Rectangle] = None,
+            found_clear_trajectory: bool = None,
+
     ):
         self.time = time
         self.execution_time = execution_time
@@ -157,6 +165,8 @@ class IterationInfo:
         self.reference_trajectory = reference_trajectory
         self.alternate_trajectories = alternate_trajectories
         self.invalid_trajectories = invalid_trajectories
+        self.visible_obstacles = visible_obstacles
+        self.found_clear_trajectory = found_clear_trajectory
 
     def as_table(self, columns_to_display: list[str]) -> list:
         values_for_columns = []
@@ -204,8 +214,9 @@ class IterationInfoBatch:
         "reference_trajectory",
         "alternate_trajectories",
         "invalid_trajectories",
+        "visible_obstacles",
+        "found_clear_trajectory",
     ]
-
 
     time: np.ndarray
     execution_time: np.ndarray
@@ -243,6 +254,8 @@ class IterationInfoBatch:
     reference_trajectory: np.ndarray
     alternate_trajectories: np.ndarray
     invalid_trajectories: np.ndarray
+    visible_obstacles: np.ndarray
+    found_clear_trajectory: np.ndarray
 
     def __init__(self, n: int):
         """
@@ -284,6 +297,8 @@ class IterationInfoBatch:
         self.reference_trajectory = np.empty(n, dtype=ParametricSpiral)
         self.alternate_trajectories = np.empty(n, dtype=list)
         self.invalid_trajectories = np.empty(n, dtype=list)
+        self.visible_obstacles = np.empty(n, dtype=list)
+        self.found_clear_trajectory = np.empty(n, dtype=bool)
 
     @classmethod
     def from_iteration_infos(cls, iteration_infos: list[IterationInfo]) -> "IterationInfoBatch":
@@ -331,6 +346,8 @@ class IterationInfoBatch:
         batch.reference_trajectory[:] = [info.reference_trajectory for info in iteration_infos]
         batch.alternate_trajectories[:] = [info.alternate_trajectories for info in iteration_infos]
         batch.invalid_trajectories[:] = [info.invalid_trajectories for info in iteration_infos]
+        batch.visible_obstacles[:] = [info.visible_obstacles for info in iteration_infos]
+        batch.found_clear_trajectory[:] = [info.found_clear_trajectory for info in iteration_infos]
 
         return batch
 
@@ -373,5 +390,7 @@ class IterationInfoBatch:
         sliced_batch.reference_trajectory = self.reference_trajectory[slice_key]
         sliced_batch.alternate_trajectories = self.alternate_trajectories[slice_key]
         sliced_batch.invalid_trajectories = self.invalid_trajectories[slice_key]
+        sliced_batch.visible_obstacles = self.visible_obstacles[slice_key]
+        sliced_batch.found_clear_trajectory = self.found_clear_trajectory[slice_key]
 
         return sliced_batch

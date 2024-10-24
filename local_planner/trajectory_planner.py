@@ -227,22 +227,23 @@ class TrajectoryPlanner:
             visible_obstacles,
         )
 
-        # compute a more accurate path discretization than needed for visualization
-        best_trajectory.evaluate(0.01)
+        if best_trajectory is not None:
+            # compute a more accurate path discretization than needed for visualization
+            best_trajectory.evaluate(0.01)
 
-        velocity_profile = compute_velocity_profile(
-            current_state.x_dot,
-            v_min=self.vi.min_x_dot,
-            v_max=self.vi.max_x_dot,
-            a_long_max=self.vi.max_a,
-            a_long_min=self.vi.min_a,
-            a_lat_max=self.vi.static_constraints.max_y_dot_dot,
-            trajectory_discretization=best_trajectory.discretized,
-        )
+            velocity_profile = compute_velocity_profile(
+                current_state.x_dot,
+                v_min=self.vi.min_x_dot,
+                v_max=self.vi.max_x_dot,
+                a_long_max=self.vi.max_a,
+                a_long_min=self.vi.min_a,
+                a_lat_max=self.vi.static_constraints.max_y_dot_dot,
+                trajectory_discretization=best_trajectory.discretized,
+            )
 
-        best_trajectory.discretized.x_dot = velocity_profile
+            best_trajectory.discretized.x_dot = velocity_profile
 
-        best_trajectory.discretized.S += start_S_path
+            best_trajectory.discretized.S += start_S_path
 
         self.current_trajectory = best_trajectory
 
@@ -267,7 +268,7 @@ class TrajectoryPlanner:
             raise ValueError("No candidate trajectory parameters provided")
 
         best_trajectory = None
-        found_clear_trajectory = False
+        found_clear_trajectory = True
         alternate_trajectories: list[SpiralTrajectory] = []
         invalid_trajectories: list[SpiralTrajectory] = []
 
@@ -300,7 +301,7 @@ class TrajectoryPlanner:
             print(
                 "No clear trajectory found so setting it to the first invalid trajectory in the list"
             )
-            best_trajectory = invalid_trajectories[0]
+            # best_trajectory = invalid_trajectories[0]
             found_clear_trajectory = False
 
         return (

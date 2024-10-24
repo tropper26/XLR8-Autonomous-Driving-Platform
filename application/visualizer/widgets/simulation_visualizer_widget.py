@@ -181,6 +181,8 @@ class SimulationVisualizerWidget(QWidget):
             "time",
             "S_ref",
             "K_ref",
+            "found_clear_trajectory",
+            "dont_draw"
         ]
 
         self.column_count = len(self.columns_to_display)
@@ -449,11 +451,11 @@ class SimulationVisualizerWidget(QWidget):
 
         self.canvas.draw_idle()
 
-    def add_visual_area_plot(self):
+    def add_visual_area_plot(self, visual_distance):
         visual_area_ellipse = patches.Ellipse(
             (0, 0),
-            width=10,
-            height=5,
+            width=visual_distance * 2,
+            height=10,
             angle=0,
             fill=False,
             edgecolor="purple",
@@ -538,8 +540,7 @@ class SimulationVisualizerWidget(QWidget):
 
         for index in range(len(new_sim_res) - self.vehicle_plot_count):
             self.add_car_plot(new_sim_res[index].vehicle_params_for_visualization)
-
-        self.add_visual_area_plot()
+            self.add_visual_area_plot(new_sim_res[index].visible_distance)
 
         self.new_sim_results = new_sim_res.copy()
 
@@ -562,6 +563,7 @@ class SimulationVisualizerWidget(QWidget):
         self.canvas.draw()
 
     def update_results_to_visualize(self, new_sim_res: list[SimulationResult]) -> list[SimulationResult]:
+        self.previous_visible_obstacle_patches = []
         sim_results = []
         self.last_sim_nr = self.sim_results_counter
 
@@ -651,96 +653,120 @@ class SimulationVisualizerWidget(QWidget):
                 for wheel_polygon, wheel_shape in zip(wheel_polygons, wheel_shapes):
                     wheel_polygon.set_xy(wheel_shape)
 
-                car_trajectory_plot.set_data(
-                    sim_result.iteration_info_batch.X[: index + 1],
-                    sim_result.iteration_info_batch.Y[: index + 1],
-                )
-
-                if isinstance(current_iteration.controller_viz_info, ControllerVizInfo):
-                    controller_viz_plot.set_data(
-                        current_iteration.controller_viz_info.X,
-                        current_iteration.controller_viz_info.Y,
+                    car_trajectory_plot.set_data(
+                        sim_result.iteration_info_batch.X[: index + 1],
+                        sim_result.iteration_info_batch.Y[: index + 1],
                     )
 
-                    controller_viz_ref_plot.set_data(
-                        current_iteration.controller_viz_info.ref_X,
-                        current_iteration.controller_viz_info.ref_Y,
+                    if isinstance(current_iteration.controller_viz_info, ControllerVizInfo):
+                        controller_viz_plot.set_data(
+                            current_iteration.controller_viz_info.X,
+                            current_iteration.controller_viz_info.Y,
+                        )
+
+                        controller_viz_ref_plot.set_data(
+                            current_iteration.controller_viz_info.ref_X,
+                            current_iteration.controller_viz_info.ref_Y,
+                        )
+
+                        if current_iteration.controller_viz_info.viz_type == Types.Line:
+                            controller_viz_plot.set_linestyle("-")
+                            controller_viz_ref_plot.set_linestyle("-")
+                            controller_viz_plot.set_marker("o")
+                            controller_viz_ref_plot.set_marker("o")
+                        elif current_iteration.controller_viz_info.viz_type == Types.Point:
+                            controller_viz_plot.set_linestyle("None")
+                            controller_viz_ref_plot.set_linestyle("None")
+                            controller_viz_plot.set_marker("x")
+                            controller_viz_ref_plot.set_marker("x")
+
+            # Currently display only for first simulation
+            sim_result = self.current_sim_results_to_visualize[0]
+            if index < len(sim_result.iteration_infos):
+                current_iteration = sim_result.iteration_infos[index]
+
+                for obst_patch in self.previous_visible_obstacle_patches:
+                    if obst_patch:
+                        obst_patch.remove()
+
+                self.previous_visible_obstacle_patches = []
+                for rect in current_iteration.visible_obstacles:
+                    patch = pltRectangle(
+                        (rect.x, rect.y),
+                        rect.width,
+                        rect.height,
+                        linewidth=1,
+                        edgecolor=self.obstacle_color,
+                        facecolor="purple",
+                        zorder=100,
+                    )
+                    self.main_plot_ax.add_patch(patch)
+                    self.previous_visible_obstacle_patches.append(patch)
+
+                #S_ref_till_index = sim_result.iteration_info_batch.S_ref[: index + 1]
+                # self.X_plot.set_data(
+                #     S_ref_till_index, sim_result.iteration_info_batch.X[: index + 1]
+                # )
+                # self.Y_plot.set_data(
+                #     S_ref_till_index, sim_result.iteration_info_batch.Y[: index + 1]
+                # )
+                # self.x_dot_plot.set_data(
+                #     S_ref_till_index, sim_result.iteration_info_batch.x_dot[: index + 1]
+                # )
+                # self.psi_plot.set_data(
+                #     S_ref_till_index, sim_result.iteration_info_batch.psi_dot[: index + 1]
+                # )
+
+                if current_iteration.reference_trajectory:
+                    X = current_iteration.reference_trajectory.discretized.X
+                    Y = current_iteration.reference_trajectory.discretized.Y
+                    self.reference_trajectory_plot.set_data(X, Y)
+
+                alternate_trajectories = current_iteration.alternate_trajectories
+                invalid_trajectories = current_iteration.invalid_trajectories
+
+                # YES WE DO NEED THESE EXTRA CHECKS
+                if len(alternate_trajectories) > 0 or len(invalid_trajectories) > 0:
+                    if len(alternate_trajectories) > 0:
+                        X = np.concatenate(
+                            [at.discretized.X for at in alternate_trajectories]
+                        )
+                        Y = np.concatenate(
+                            [at.discretized.Y for at in alternate_trajectories]
+                        )
+
+                        self.alternate_trajectories_plot.set_offsets(np.c_[X, Y])
+                    else:
+                        self.alternate_trajectories_plot.set_offsets(np.c_[[], []])
+
+                    if len(invalid_trajectories) > 0:
+                        X = np.concatenate(
+                            [it.discretized.X for it in invalid_trajectories]
+                        )
+                        Y = np.concatenate(
+                            [it.discretized.Y for it in invalid_trajectories]
+                        )
+
+                        self.invalid_trajectories_plot.set_offsets(np.c_[X, Y])
+                    else:
+                        self.invalid_trajectories_plot.set_offsets(np.c_[[], []])
+
+                    self.reward_exp_label.setText(
+                        f"Reward Explanation: {current_iteration.reward_explanation}"
                     )
 
-                    if current_iteration.controller_viz_info.viz_type == Types.Line:
-                        controller_viz_plot.set_linestyle("-")
-                        controller_viz_ref_plot.set_linestyle("-")
-                        controller_viz_plot.set_marker("o")
-                        controller_viz_ref_plot.set_marker("o")
-                    elif current_iteration.controller_viz_info.viz_type == Types.Point:
-                        controller_viz_plot.set_linestyle("None")
-                        controller_viz_ref_plot.set_linestyle("None")
-                        controller_viz_plot.set_marker("x")
-                        controller_viz_ref_plot.set_marker("x")
+                    self.update_state_table(sim_result.iteration_infos, index)
 
-        sim_result = self.current_sim_results_to_visualize[
-            0
-        ]  # Currently display only for first simulation
-        if index < len(sim_result.iteration_infos):
-            current_iteration = sim_result.iteration_infos[index]
+                    self.canvas.draw_idle()  # Redraw the canvas when manually updating the plots
 
-            S_ref_till_index = sim_result.iteration_info_batch.S_ref[: index + 1]
-            # self.X_plot.set_data(
-            #     S_ref_till_index, sim_result.iteration_info_batch.X[: index + 1]
-            # )
-            # self.Y_plot.set_data(
-            #     S_ref_till_index, sim_result.iteration_info_batch.Y[: index + 1]
-            # )
-            # self.x_dot_plot.set_data(
-            #     S_ref_till_index, sim_result.iteration_info_batch.x_dot[: index + 1]
-            # )
-            # self.psi_plot.set_data(
-            #     S_ref_till_index, sim_result.iteration_info_batch.psi_dot[: index + 1]
-            # )
-
-            X = current_iteration.reference_trajectory.discretized.X
-            Y = current_iteration.reference_trajectory.discretized.Y
-            self.reference_trajectory_plot.set_data(X, Y)
-
-            alternate_trajectories = current_iteration.alternate_trajectories
-            invalid_trajectories = current_iteration.invalid_trajectories
-
-            # YES WE DO NEED THESE EXTRA CHECKS
-            if len(alternate_trajectories) > 0 or len(invalid_trajectories) > 0:
-                if len(alternate_trajectories) > 0:
-                    X = np.concatenate(
-                        [at.discretized.X for at in alternate_trajectories]
-                    )
-                    Y = np.concatenate(
-                        [at.discretized.Y for at in alternate_trajectories]
-                    )
-
-                    self.alternate_trajectories_plot.set_offsets(np.c_[X, Y])
-                else:
-                    self.alternate_trajectories_plot.set_offsets(np.c_[[], []])
-
-                if len(invalid_trajectories) > 0:
-                    X = np.concatenate(
-                        [it.discretized.X for it in invalid_trajectories]
-                    )
-                    Y = np.concatenate(
-                        [it.discretized.Y for it in invalid_trajectories]
-                    )
-
-                    self.invalid_trajectories_plot.set_offsets(np.c_[X, Y])
-                else:
-                    self.invalid_trajectories_plot.set_offsets(np.c_[[], []])
-
-            self.reward_exp_label.setText(
-                f"Reward Explanation: {current_iteration.reward_explanation}"
-            )
-
-            self.update_state_table(sim_result.iteration_infos, index)
-
-            self.canvas.draw_idle()  # Redraw the canvas when manually updating the plots
 
         if index == self.max_frame_count - 1:
+            if self.previous_visible_obstacle_patches:
+                for obst_patch in self.previous_visible_obstacle_patches:
+                    obst_patch.remove()
+                self.previous_visible_obstacle_patches = []
             self.on_animation_end()
+
 
         return iter(
             (
@@ -994,28 +1020,3 @@ def draw_vehicle(
             back_left_wheel_shape,
             back_right_wheel_shape,
         ]
-
-
-def draw_visual_range(current_state: State, vp: VehicleParams) -> list[tuple[float, float]]:
-    front_axle_X, front_axle_Y = vp.front_axle_position(current_state)
-
-    # Define ellipse parameters
-    major_axis = 10
-    minor_axis = 5
-    num_points = 100  # The number of points to approximate the ellipse shape
-
-    # Parametric equation for an ellipse
-    t = np.linspace(0, 2 * np.pi, num_points)
-    ellipse_x = major_axis * np.cos(t) / 2  # Divide by 2 since axes are diameters
-    ellipse_y = minor_axis * np.sin(t) / 2
-
-    # Rotate ellipse to align with the vehicle's Psi (heading angle)
-    cos_psi = np.cos(current_state.Psi)
-    sin_psi = np.sin(current_state.Psi)
-
-    rotated_ellipse = [
-        (front_axle_X + cos_psi * x - sin_psi * y, front_axle_Y + sin_psi * x + cos_psi * y)
-        for x, y in zip(ellipse_x, ellipse_y)
-    ]
-
-    return rotated_ellipse

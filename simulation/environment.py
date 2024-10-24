@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 from dto.coord_transform import path_to_inertial_frame, inertial_to_path_frame
@@ -25,7 +27,7 @@ class Environment:
             path: Path,
             path_obstacles: list[Rectangle],
             sampling_time: float,
-            max_visible_distance: float,
+            visible_distance: float,
             grid_cell_count: tuple[int, int] = (32, 32),
             use_random_offset_starting_position=False,
             training=False,
@@ -39,7 +41,7 @@ class Environment:
         self.path_discretization = path.discretized
         self.path_obstacles = path_obstacles
         self.observed_path_width = sum(path.lane_width_infos.lane_widths)
-        self.max_visible_distance = max_visible_distance
+        self.visible_distance = visible_distance
 
         self.use_random_offset_starting_position = use_random_offset_starting_position
         self.training = training
@@ -187,23 +189,34 @@ class Environment:
 
         # get the first index that is ahead of the look ahead distance
         target_index = int(self.path_discretization.S.searchsorted(
-            current_length + self.max_visible_distance
+            current_length + self.visible_distance
         ))
 
         # Slice the DataFrame between the current closest index and the target index
         self.observed_path_discretization = self.path_discretization[
-            self.current_closest_index_on_path:target_index
-        ]
+                                            self.current_closest_index_on_path:target_index
+                                            ]
 
         self.visible_obstacles = []
         for obstacle in self.path_obstacles:
-            closest_x = np.clip(front_wheel_X, obstacle.x, obstacle.x + obstacle.width)
-            closest_y = np.clip(front_wheel_Y, obstacle.y, obstacle.y + obstacle.height)
+            if obstacle.lifetime_seconds > 0:
+                closest_x = np.clip(front_wheel_X, obstacle.x, obstacle.x + obstacle.width)
+                closest_y = np.clip(front_wheel_Y, obstacle.y, obstacle.y + obstacle.height)
 
-            if (front_wheel_X - closest_x) ** 2 + (
-                    front_wheel_Y - closest_y
-            ) ** 2 < self.max_visible_distance ** 2:
-                self.visible_obstacles.append(obstacle)
+                # this is for circular visibility
+                # if math.hypot(front_wheel_X - closest_x, front_wheel_Y - closest_y) <= self.max_visible_distance:
+                #     self.visible_obstacles.append(obstacle)
+
+                # for elliptical visibility
+
+                sin_psi, cos_psi = np.sin(self.plant.X.Psi), np.cos(self.plant.X.Psi)
+
+                closest_x_vehicle_frame = cos_psi * (closest_x - front_wheel_X) + sin_psi * (closest_y - front_wheel_Y)
+                closest_y_vehicle_frame = -sin_psi * (closest_x - front_wheel_X) + cos_psi * (closest_y - front_wheel_Y)
+
+                if (closest_x_vehicle_frame ** 2 /
+                    self.visible_distance ** 2 + closest_y_vehicle_frame ** 2 / 5 ** 2) <= 1:
+                    self.visible_obstacles.append(obstacle)
 
         return (
             self.current_closest_index_on_path,
@@ -217,7 +230,6 @@ class Environment:
     ) -> tuple[State, ControlAction, int, PathSegmentDiscretization, float, list[Rectangle]]:
         self.plant.update_control_input(control_action)
         self.plant.propagate_model(self.sampling_time)
-
         self.get_observation()
 
         if base_noise_scale == 0.0:
@@ -230,7 +242,13 @@ class Environment:
                 self.visible_obstacles,
             )
 
-        state_noise, control_noise = self._compute_noise(base_noise_scale)
+        state_noise, control_noise, obstacle_noises = self._compute_noise(len(self.visible_obstacles), base_noise_scale)
+
+        for obstacle_noise, obstacle in zip(obstacle_noises, self.visible_obstacles):
+            obstacle.x += obstacle_noise.x
+            obstacle.y += obstacle_noise.y
+            obstacle.width += obstacle_noise.width
+            obstacle.height += obstacle_noise.height
 
         return (
             self.plant.X + state_noise,
@@ -242,7 +260,7 @@ class Environment:
         )
 
     @staticmethod
-    def _compute_noise(noise_scale_multiplier=1.0):
+    def _compute_noise(obstacle_count: int, noise_scale_multiplier=1.0):
         state_noise = State(
             X=np.random.normal(
                 0, 1.5 * noise_scale_multiplier
@@ -271,13 +289,26 @@ class Environment:
             d=np.random.normal(0, np.radians(0.5)),  # Steering angle noise (radians)
         )
 
-        return state_noise, control_noise
+        obstacle_noises = []
+        for _ in range(obstacle_count):
+            obstacle_noise = Rectangle(
+                x=np.random.normal(0, 0.1 * noise_scale_multiplier),
+                y=np.random.normal(0, 0.1 * noise_scale_multiplier),
+                width=np.random.normal(0, 0.01 * noise_scale_multiplier),
+                height=np.random.normal(0, 0.01 * noise_scale_multiplier),
+            )
+            obstacle_noises.append(obstacle_noise)
+
+        return state_noise, control_noise, obstacle_noises
 
     def check_termination(
             self,
             error_state_path_frame: State,
             terminate_early=False,
     ) -> (EndCondition, (float, str)):
+        if error_state_path_frame is None:  # Car is stopped since no trajectory available
+            return EndCondition.NOT_TERMINATED, (5, "Car is stopped since no trajectory available")
+
         if self.destination_reached():
             return (
                 EndCondition.DESTINATION_REACHED,

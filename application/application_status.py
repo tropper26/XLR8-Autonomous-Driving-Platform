@@ -154,7 +154,7 @@ class ApplicationStatus:
         self.possible_trajectory_candidate_count = 20
         self.possible_trajectory_step_size = 0.50
 
-        self.max_visible_distance = 30
+        self.visible_distance = 15
         self.reward_manager = RewardManager(
             destination_reached_reward=10,
             out_of_bounds_penalty=-25,
@@ -198,8 +198,8 @@ class ApplicationStatus:
         return len(self.simulation_infos)
 
     def add_simulation(self):
-        noise_scales = [0.0, 1.0, 1.0]
-        use_kalman_filter = [False, True, False]
+        noise_scales = [1.0, 1.0, 1.0]
+        use_kalman_filter = [True, True, False]
         print(
             f"Adding simulation {self.simulation_count + 1} with noise scale {noise_scales[self.simulation_count % 3]}"
         )

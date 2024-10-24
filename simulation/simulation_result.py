@@ -27,6 +27,7 @@ class SimulationResult:
         path: Path,
         end_condition: EndCondition,
         run_index: int,
+        visible_distance: float
     ):
         self.simulation_info = simulation_info
         self.vehicle_params_for_visualization = vehicle_params_for_visualization
@@ -35,6 +36,7 @@ class SimulationResult:
         self.path = path
         self.end_condition = end_condition
         self.run_index = run_index
+        self.visible_distance = visible_distance
 
     def __str__(self):
         return f"""
@@ -65,6 +67,7 @@ class SimulationResult:
             path=self.path,
             end_condition=self.end_condition,
             run_index=self.run_index,
+            visible_distance=self.visible_distance
         )
 
     def copy(self):

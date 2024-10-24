@@ -68,6 +68,7 @@ class SimulationProcess(mp.Process):
                                 iteration_infos
                             ),
                             run_index=self.completed_runs.value,
+                            visible_distance=self.app_status.visible_distance,
                         )
                         sim_result.run_index = self.completed_runs.value
                         sim_result.vehicle_params_for_visualization = vp
@@ -133,7 +134,7 @@ def simulation_setup(
         path_obstacles=current_app_status.path_obstacles,
         sampling_time=simulation_info.sampling_time,
         grid_cell_count=current_app_status.environment_grid_cell_count,
-        max_visible_distance=current_app_status.max_visible_distance,
+        visible_distance=current_app_status.visible_distance,
         use_random_offset_starting_position=False,
         training=False,
     )

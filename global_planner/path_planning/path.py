@@ -89,7 +89,7 @@ def compute_offset_distances(
     # Handle the right side, including shoulder if no lanes
     if right_lane_count > 0:
         # Calculate distances for right lanes (negative offsets)
-        right_distances = lane_offsets(left_lane_count, right_lane_count, -1, lane_widths, central_lane_half_width)
+        right_distances = lane_offsets(left_lane_count+1, right_lane_count, -1, lane_widths, central_lane_half_width)
         distances += right_distances
     else:
         right_shoulder = -central_lane_half_width

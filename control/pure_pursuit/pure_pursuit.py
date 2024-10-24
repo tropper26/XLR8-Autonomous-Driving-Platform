@@ -11,9 +11,9 @@ from vehicle.vehicle_info import VehicleInfo
 
 class PurePursuitController(BaseController):
     def __init__(
-        self,
-        params: PurePursuitParams,
-        vi: VehicleInfo,
+            self,
+            params: PurePursuitParams,
+            vi: VehicleInfo,
     ):
         super().__init__(params=params, vi=vi)
         self.params = params
@@ -30,18 +30,18 @@ class PurePursuitController(BaseController):
         )
 
     def initialize(
-        self,
-        initial_state: State,
-        starting_control_action: ControlAction,
+            self,
+            initial_state: State,
+            starting_control_action: ControlAction,
     ):
         pass
 
     def compute_action(
-        self,
-        index,
-        current_state: State,
-        error_state: State,
-        trajectory_discretization: TrajectoryDiscretization,
+            self,
+            index,
+            current_state: State,
+            error_state: State,
+            trajectory_discretization: TrajectoryDiscretization,
     ) -> (ControlAction, ControllerVizInfo):
         steering_angle, target_X, target_Y = self.pure_pursuit_control(
             current_state, trajectory_discretization
@@ -65,7 +65,7 @@ class PurePursuitController(BaseController):
         return self.params.kp * velocity_error
 
     def pure_pursuit_control(
-        self, current_state: State, trajectory_discretization: TrajectoryDiscretization
+            self, current_state: State, trajectory_discretization: TrajectoryDiscretization
     ):
         rear_X, rear_Y = self.vi.rear_axle_position(current_state)
 
@@ -81,17 +81,17 @@ class PurePursuitController(BaseController):
         target_X, target_Y = trajectory_discretization.X[target_index], trajectory_discretization.Y[target_index]
 
         heading_error = (
-            np.arctan2(target_Y - rear_Y, target_X - rear_X) - current_state.Psi
+                np.arctan2(target_Y - rear_Y, target_X - rear_X) - current_state.Psi
         )
 
         # Normalize the angle between -pi and pi
         heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
 
         value = (
-            2.0
-            * self.vi.wheelbase
-            * np.sin(heading_error)
-            / self.look_ahead_distance(current_state.x_dot)
+                2.0
+                * self.vi.wheelbase
+                * np.sin(heading_error)
+                / self.look_ahead_distance(current_state.x_dot)
         )
 
         steering_angle = np.arctan2(value, 1)
