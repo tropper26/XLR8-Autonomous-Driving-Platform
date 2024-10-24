@@ -1,9 +1,4 @@
-.idea/inspectionProfiles/profiles_settings.xml
-.idea/inspectionProfiles/Project_Default.xml
-.idea/AutonomousDriving.iml
-.idea/misc.xml
-.idea/modules.xml
 *.pyc
-.idea/jsonSchemas.xml
+.idea/
 /test/
 /simulation/localisation/files/
