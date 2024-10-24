@@ -4,14 +4,21 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 
 from dto.waypoint import Waypoint
-from test.parametric_curve_testing.copied_cubic_spline_planner import calc_spline_course
 
+def calc_s(x, y):
+    dx = np.diff(x)
+    dy = np.diff(y)
+    ds = np.hypot(dx, dy)
+    s = [0]
+    s.extend(np.cumsum(ds))
+    return s
 
 def generate_cubic_spline_trajectory(waypoints: List[Waypoint], sampling_time: float):
     X = [waypoint.x for waypoint in waypoints]
     Y = [waypoint.y for waypoint in waypoints]
 
-    X_ref, Y_ref, _, _, _ = calc_spline_course(X, Y, 0.01)
+    s = list(np.arange(0, calc_s(X, Y)[-1], 0.01))
+    X_ref, Y_ref = s, s
 
     time_array = np.round(np.arange(0, len(X_ref)) * sampling_time, 2)
 

@@ -22,7 +22,7 @@ def read_and_scale_graph(input_file, output_file, scale_factor):
 
 # Define the input and output files and the scale factor
 input_file = "Test_Track.graphml"
-output_file = "Test_Track.graphml"
+output_file = "Test_Track1.graphml"
 scale_factor = 10
 
 # Run the function

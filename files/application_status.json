@@ -1,5 +1,5 @@
 {
-  "graph_network_name": "Blank Canvas",
+  "road_network_name": "Blank Canvas",
   "planner_sampling_time": 0.01,
   "planning_strategy": "Center of Path Spiral"
 }
