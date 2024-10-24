@@ -63,8 +63,8 @@ def eval_spiral(
     s_values = np.linspace(0, arclength, point_count)
     curvature_values = K(a, b, c, d, s_values)
     psi_values = Psi(a, b, c, d, s_values, psi_0)
-    x_values = scipy.integrate.cumtrapz(np.cos(psi_values), s_values, initial=0) + x_0
-    y_values = scipy.integrate.cumtrapz(np.sin(psi_values), s_values, initial=0) + y_0
+    x_values = scipy.integrate.cumulative_trapezoid(np.cos(psi_values), s_values, initial=0)  + x_0
+    y_values = scipy.integrate.cumulative_trapezoid(np.sin(psi_values), s_values, initial=0) + y_0
 
     return pd.DataFrame(
         {
