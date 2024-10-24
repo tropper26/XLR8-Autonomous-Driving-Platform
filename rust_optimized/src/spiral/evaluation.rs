@@ -64,3 +64,38 @@ pub fn eval_spiral(p: SpiralParameters, x_0: f64, y_0: f64, psi_0: f64, ds: f64)
     ]
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absds_f_test() {
+        let p = [0.5, -0.75, 0.12, 0.6, 34.0];
+        let [a, b, c, d, arc_length] = abcds_f(&p);
+
+        assert_eq!(a, 0.5);
+        assert_eq!(b, -0.2776470588235294);
+        assert_eq!(c, 0.018023356401384083);
+        assert_eq!(d, -0.0002873753307551394);
+        assert_eq!(arc_length, 34.0);
+    }
+
+    #[test]
+    fn test_eval_spiral() {
+        let p = [0.5, -0.75, 0.12, 0.6, 34.0];
+        let x_0 = 4.53;
+        let y_0 = -17.54;
+        let psi_0 = 0.45;
+        let ds = 0.01;
+
+        let [s_values, y_values, psi_values, x_values, curvature_values] =
+            eval_spiral(p, x_0, y_0, psi_0, ds);
+
+        let expected_size = 3400;
+        assert_eq!(expected_size, s_values.len());
+        assert_eq!(expected_size, y_values.len());
+        assert_eq!(expected_size, psi_values.len());
+        assert_eq!(expected_size, x_values.len());
+        assert_eq!(expected_size, curvature_values.len());
+    }
+}
