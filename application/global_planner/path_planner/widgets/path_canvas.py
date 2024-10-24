@@ -606,7 +606,7 @@ class PathCanvas(ZoomableGraphicsView):
 
     def spawn_random_obstacles(self, num_obstacles: int):
         for segment in self.path_manager.path_segments:
-            for _ in range(math.floor(num_obstacles / len(self.path_manager.path_segments))):
+            for _ in range(num_obstacles):
                 index = random.randrange(0, len(segment.discretized))
                 curve_count = segment.discretized.lateral_X.shape[1]
                 curve_index = random.randrange(0, curve_count)

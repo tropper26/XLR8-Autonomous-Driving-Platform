@@ -138,6 +138,12 @@ class PathPlannerWidget(QWidget):
         self.settings_layout.addSpacerItem(QSpacerItem(0, 20))
 
         self.add_field(
+            "Number of random obstacles per segment",
+            "Enter number of obstacles",
+            value=self.current_app_status.random_obstacle_count,
+            slot=self.update_random_obstacle_count,
+        )
+        self.add_field(
             "Simulation X Limit",
             "Enter X limit",
             value=self.current_app_status.world_x_limit,
@@ -160,12 +166,6 @@ class PathPlannerWidget(QWidget):
             "Enter number of lanes",
             value=self.current_app_status.lane_count,
             slot=self.update_lane_count,
-        )
-        self.add_field(
-            "Number of random obstacles",
-            "Enter number of obstacles",
-            value=self.current_app_status.random_obstacle_count,
-            slot=self.update_random_obstacle_count,
         )
 
     def add_field(self, label_text, placeholder, value=None, slot=None):
