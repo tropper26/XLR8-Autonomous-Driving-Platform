@@ -545,7 +545,7 @@ class SimulationVisualizerWidget(QWidget):
 
         if not self.animation:  # First time visualization
             self.update_results_to_visualize(self.new_sim_results.copy())
-            self.init_subplots(self.current_sim_results_to_visualize[0].iteration_info_batch)
+            # self.init_subplots(self.current_sim_results_to_visualize[0].iteration_info_batch)
 
             self.buttons_enabled = True
             self.playing = True
@@ -593,7 +593,7 @@ class SimulationVisualizerWidget(QWidget):
                 f"Run: {self.current_sim_results_to_visualize[0].run_index + 1}"
             )
 
-            self.init_subplots(self.current_sim_results_to_visualize[0].iteration_info_batch)
+            # self.init_subplots(self.current_sim_results_to_visualize[0].iteration_info_batch)
 
         if self.playing:
             self.current_index = 0
@@ -685,18 +685,18 @@ class SimulationVisualizerWidget(QWidget):
             current_iteration = sim_result.iteration_infos[index]
 
             S_ref_till_index = sim_result.iteration_info_batch.S_ref[: index + 1]
-            self.X_plot.set_data(
-                S_ref_till_index, sim_result.iteration_info_batch.X[: index + 1]
-            )
-            self.Y_plot.set_data(
-                S_ref_till_index, sim_result.iteration_info_batch.Y[: index + 1]
-            )
-            self.x_dot_plot.set_data(
-                S_ref_till_index, sim_result.iteration_info_batch.x_dot[: index + 1]
-            )
-            self.psi_plot.set_data(
-                S_ref_till_index, sim_result.iteration_info_batch.psi_dot[: index + 1]
-            )
+            # self.X_plot.set_data(
+            #     S_ref_till_index, sim_result.iteration_info_batch.X[: index + 1]
+            # )
+            # self.Y_plot.set_data(
+            #     S_ref_till_index, sim_result.iteration_info_batch.Y[: index + 1]
+            # )
+            # self.x_dot_plot.set_data(
+            #     S_ref_till_index, sim_result.iteration_info_batch.x_dot[: index + 1]
+            # )
+            # self.psi_plot.set_data(
+            #     S_ref_till_index, sim_result.iteration_info_batch.psi_dot[: index + 1]
+            # )
 
             X = current_iteration.reference_trajectory.discretized.X
             Y = current_iteration.reference_trajectory.discretized.Y
