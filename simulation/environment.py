@@ -24,7 +24,6 @@ class Environment:
             simulation_y_limit: float,
             path: Path,
             path_obstacles: list[Rectangle],
-            path_width: float,
             sampling_time: float,
             max_visible_distance: float,
             grid_cell_count: tuple[int, int] = (32, 32),
@@ -39,7 +38,7 @@ class Environment:
         self.path = path
         self.path_discretization = path.discretized
         self.path_obstacles = path_obstacles
-        self.observed_path_width = path_width
+        self.observed_path_width = sum(path.lane_width_infos.lane_widths)
         self.max_visible_distance = max_visible_distance
 
         self.use_random_offset_starting_position = use_random_offset_starting_position

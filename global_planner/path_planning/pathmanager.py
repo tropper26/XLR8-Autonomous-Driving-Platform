@@ -4,6 +4,7 @@ from typing import Optional
 import scipy
 
 from dto.waypoint import WaypointWithHeading
+from global_planner.path_planning.lane_width_infos import LaneWidthInfos
 from global_planner.path_planning.path import Path, compute_offset_distances
 from parametric_curves.path_segment import PathSegment
 
@@ -74,6 +75,7 @@ class PathManager:
     def export_path(self) -> Path:
         return Path(
             central_curve_segments=self.path_segments,
+            lane_width_infos=LaneWidthInfos(self.left_lane_count, self.right_lane_count, self.lane_widths),
         )
 
     def create_path_segments_from_route(

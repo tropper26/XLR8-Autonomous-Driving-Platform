@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from global_planner.path_planning.lane_width_infos import LaneWidthInfos
 from parametric_curves.path_segment import PathSegmentDiscretization, PathSegment
 
 def check_and_print_array(arr: np.ndarray | list, decimals: int = 2) -> None:
@@ -124,11 +125,13 @@ class Path:
     def __init__(
             self,
             central_curve_segments: list[PathSegment],
+            lane_width_infos: LaneWidthInfos
     ):
         self.central_curve_segments = central_curve_segments
         self.discretized = concat_path_segment_discretizations(
             [segment.discretized for segment in central_curve_segments]
         )
+        self.lane_width_infos = lane_width_infos
 
     # def create_path_discretization
 

@@ -85,7 +85,7 @@ class Simulation:
                 current_state=current_state,
                 prev_action=control_action,
                 observed_path_discretization=observed_path_discretization,
-                observed_path_width=observed_path_width,
+                lane_width_infos=self.env.path.lane_width_infos,
                 visible_obstacles=visible_obstacles,
             )
 

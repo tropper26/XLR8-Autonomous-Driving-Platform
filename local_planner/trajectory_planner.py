@@ -6,6 +6,8 @@ import numpy as np
 from dto.coord_transform import compute_path_frame_error
 from dto.geometry import Rectangle
 from dto.waypoint import Waypoint, WaypointWithHeading
+from global_planner.path_planning import path
+from global_planner.path_planning.lane_width_infos import LaneWidthInfos
 from parametric_curves.curve import (
     CurveDiscretization,
 )
@@ -43,7 +45,7 @@ def compute_lateral_points(X, Y, Psi, dist):
     dy_dt = np.sin(Psi)
 
     # Calculate normalized normal vectors
-    norms = np.sqrt(dx_dt**2 + dy_dt**2)  # Norm of the tangent vectors
+    norms = np.hypot(dx_dt, dy_dt)  # Norm of the tangent vectors
     nx = (
         -dy_dt / norms
     ) * dist  # Normal x components (90 degrees rotation of the tangent vector)
@@ -58,58 +60,56 @@ def compute_lateral_points(X, Y, Psi, dist):
 
 
 def compute_candidate_trajectory_params(
-    observed_path_width: float,
+    lane_width_infos: LaneWidthInfos,
     observed_path_discretization: PathSegmentDiscretization,
     vehicle_position: WaypointWithHeading,
     look_ahead_distance: float,
     lateral_candidate_count: int,
 ):
-    # get the first index that is ahead of the look ahead distance
-    target_index = int(
-        observed_path_discretization.S.searchsorted(
-            observed_path_discretization.S[0] + look_ahead_distance
+    candidate_trajectory_params_list = []
+
+    for i in range(lateral_candidate_count):
+        # get the first index that is ahead of the look ahead distance
+        target_index = int(
+            observed_path_discretization.S.searchsorted(
+                observed_path_discretization.S[0] + look_ahead_distance * ((10 - i - 1) / 10)
+            )
         )
-    )
 
-    target_index = min(
-        target_index, len(observed_path_discretization) - 1
-    )  # Clamp target index
+        target_index = min(
+            target_index, len(observed_path_discretization) - 1
+        )  # Clamp target index
 
-    target_X, target_Y, target_Psi = observed_path_discretization.row_at(
-        target_index, ("X", "Y", "Psi")
-    )
+        target_X, target_Y, target_Psi = observed_path_discretization.row_at(
+            target_index, ("X", "Y", "Psi")
+        )
 
-    candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)]
+        candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)] if i == 0 else []
 
-    if lateral_candidate_count > 0:
-        # Generate candidate target points by moving laterally from the target point in both directions
-        max_lat_dist = observed_path_width / 2
-        distances = np.linspace(0, max_lat_dist, lateral_candidate_count // 2)
-        distances = np.concatenate((-distances, distances))
+        lane_centers = path.compute_offset_distances(lane_width_infos.left_lane_count, lane_width_infos.right_lane_count, lane_width_infos.lane_widths)[1::2]
 
         X_pos, Y_pos, X_neg, Y_neg = compute_lateral_points(
-            target_X, target_Y, target_Psi, distances
+            target_X, target_Y, target_Psi, np.asarray(lane_centers)
         )
-        for i in range(len(distances)):
+        for i in range(len(lane_centers)):
             candidate_target_points.append(Waypoint(x=X_pos[i], y=Y_pos[i]))
             candidate_target_points.append(Waypoint(x=X_neg[i], y=Y_neg[i]))
 
-    candidate_trajectory_params_list = [
-        SpiralInputParams(
-            x_0=vehicle_position.x,
-            y_0=vehicle_position.y,
-            psi_0=vehicle_position.heading,
-            k_0=0.0,
-            x_f=point.x,
-            y_f=point.y,
-            psi_f=target_Psi,
-            k_f=0.0,
-            k_max=1.0,  # TODO this should actually be: k_max = min{k_max1, k_max2},
-            # TODO where k_max1 = tan(max_d)/wheelbase and k_max2 = a_lat_max / (v^2 + 0.0(...)1)
-        )
-        for point in candidate_target_points
-    ]
-    # print("K_max: ", np.tan(self.vi.max_d) / self.vi.wheelbase)
+        candidate_trajectory_params_list.extend([
+            SpiralInputParams(
+                x_0=vehicle_position.x,
+                y_0=vehicle_position.y,
+                psi_0=vehicle_position.heading,
+                k_0=0.0,
+                x_f=point.x,
+                y_f=point.y,
+                psi_f=target_Psi,
+                k_f=0.0,
+                k_max=1.0,  # TODO this should actually be: k_max = min{k_max1, k_max2},
+                # TODO where k_max1 = tan(max_d)/wheelbase and k_max2 = a_lat_max / (v^2 + 0.0(...)1)
+            )
+            for point in candidate_target_points
+        ])
 
     return candidate_trajectory_params_list
 
@@ -151,7 +151,7 @@ class TrajectoryPlanner:
         current_state: State,
         prev_action: ControlAction,
         observed_path_discretization: PathSegmentDiscretization,
-        observed_path_width: float,
+        lane_width_infos: LaneWidthInfos,
         visible_obstacles: list[Rectangle],
     ) -> tuple[bool, SpiralTrajectory, list[SpiralTrajectory], list[SpiralTrajectory]]:
         start_S_path = observed_path_discretization.S[0]
@@ -195,13 +195,13 @@ class TrajectoryPlanner:
         print("Replanning trajectory")
 
         candidate_trajectory_params_list = compute_candidate_trajectory_params(
-            observed_path_width=observed_path_width,
+            lane_width_infos=lane_width_infos,
             observed_path_discretization=observed_path_discretization,
             vehicle_position=WaypointWithHeading(
                 front_X, front_Y, current_state.Psi
             ),  # TODO verify if it should be Psi or Psi + steering angle
             look_ahead_distance=5,
-            lateral_candidate_count=10 if visible_obstacles else 0,
+            lateral_candidate_count=3 if visible_obstacles else 0,
         )
 
         (
