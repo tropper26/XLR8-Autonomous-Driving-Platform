@@ -1,7 +1,6 @@
 from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
-    QPushButton,
     QHBoxLayout,
 )
 from matplotlib import pyplot as plt

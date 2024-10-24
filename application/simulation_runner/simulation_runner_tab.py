@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 
 from application.application_status import ApplicationStatus
 from application.simulation_runner.widgets.simulation_widget import SimulationWidget
-from simulation.simulation_info import SimulationResult
+from simulation.simulation_result import SimulationResult
 
 
 class SimulationRunnerTab(QWidget):

@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import time
 
 import numpy as np
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
@@ -18,7 +19,8 @@ from application.visualizer.widgets.simulation_visualizer_widget import (
 )
 from dto.color_theme import ColorTheme
 from simulation.simulation_process import SimulationProcess
-from simulation.simulation_info import SimulationInfo, SimulationResult
+from simulation.simulation_info import SimulationInfo
+from simulation.simulation_result import SimulationResult
 
 
 class SimulationWidget(QWidget):
@@ -55,8 +57,9 @@ class SimulationWidget(QWidget):
         super().deleteLater()
 
     def start_simulation(self):
+        start_time = time.perf_counter()
         self.sim_visualizer_widget.setup_ref_path(
-            self.current_app_status.ref_path_df,
+            self.current_app_status.ref_path.discretized,
             self.current_app_status.path_obstacles,
             self.current_app_status.world_x_limit,
             self.current_app_status.world_y_limit,
@@ -68,13 +71,15 @@ class SimulationWidget(QWidget):
             simulation_info=self.simulation_info,
             app_status=self.current_app_status,
             result_queue=self.result_queue,
-            params_pipe=child_pipe,
+            controller_params_pipe=child_pipe,
             sim_run_count=self.sim_run_count,
             visualization_interval=self.visualization_interval,
         )
+        print(f"Before Started simulation in {time.perf_counter() - start_time:.2f} s")
         self.sim_process.start()
-
+        print(f"Started simulation in {time.perf_counter() - start_time:.2f} s")
         self.monitor_simulation()
+
 
     def stop_simulation(self):
         if self.sim_process and self.sim_process.is_alive():
@@ -86,14 +91,16 @@ class SimulationWidget(QWidget):
 
     def monitor_simulation(self):
         while not self.result_queue.empty():
+            # start_time = time.perf_counter()
+            # print(f"got new result at {start_time}")
             result = self.result_queue.get()
             if isinstance(result, SimulationResult):
                 print(f"Received  result: {result.run_index}")
                 if not self.results:  # First result
                     self.sim_visualizer_widget.visualize_results([result.copy()])
                     self.update_run_info(
-                        result.iteration_infos["time"].values,
-                        result.iteration_infos["execution_time"].values,
+                        result.iteration_info_batch.time,
+                        result.iteration_info_batch.execution_time,
                     )
                     self.current_sim_result_index = 0
                     self.selectedResultChanged.emit(result.copy())
@@ -102,6 +109,7 @@ class SimulationWidget(QWidget):
                 self.run_label.setText(
                     f"Visualizing Run {self.current_sim_result_index+1}:{len(self.results)} Total Runs"
                 )
+            # print(f"Finished processing result at {time.perf_counter() - start_time:.2f} s")
 
         QTimer.singleShot(100, self.monitor_simulation)
 
@@ -169,8 +177,8 @@ class SimulationWidget(QWidget):
 
         self.sim_visualizer_widget.visualize_results(current_run_results.copy())
         self.update_run_info(
-            current_run_results.iteration_infos["time"].values,
-            current_run_results.iteration_infos["execution_time"].values,
+            current_run_results.iteration_info_batch.time,
+            current_run_results.iteration_info_batch.execution_time,
         )
         self.selectedResultChanged.emit(current_run_results.copy())
 

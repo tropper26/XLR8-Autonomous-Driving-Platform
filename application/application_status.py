@@ -14,9 +14,10 @@ from dto.color_theme import ColorTheme
 from dto.geometry import Rectangle
 from dto.waypoint import WaypointWithHeading
 from local_planner.global_trajectory_planner import GlobalTrajectoryPlanner
-from local_planner.pathmanager import PathManager
+from global_planner.path_planning.path import Path
 from simulation.reward_manager import RewardManager
-from simulation.simulation_info import SimulationInfo, SimulationResult
+from simulation.simulation_info import SimulationInfo
+from simulation.simulation_result import SimulationResult
 from state_space.models.dynamic_bicycle_model import DynamicBicycleModel
 from state_space.models.kinematic_bicycle_model import KinematicBicycleModel
 from vehicle.static_vehicle_constraints import StaticVehicleConstraints
@@ -60,6 +61,17 @@ def load_saved_controller_params() -> dict:
     return controller_params_options
 
 
+def load_global_stylesheet(application_stylesheet_path: str, color_theme: ColorTheme) -> str:
+    with open(application_stylesheet_path, 'r') as f:
+        stylesheet = f.read()
+
+    global_stylesheet = stylesheet.replace('primary_color', color_theme.primary_color) \
+        .replace('secondary_color', color_theme.secondary_color) \
+        .replace('button_text_color', color_theme.button_text_color)
+
+    return global_stylesheet
+
+
 class ApplicationStatus:
     controller_cls_lookup = {
         "Pure Pursuit Controller": PurePursuitController,
@@ -95,6 +107,7 @@ class ApplicationStatus:
     controller_params_path = "files/controller_params.json"
     application_status_path = "files/application_status.json"
     simulation_info_path = "files/simulation_info.json"
+    application_stylesheet_path = "files/style.qss"
 
     def __init__(self):
         self.color_theme = ColorTheme(
@@ -107,6 +120,7 @@ class ApplicationStatus:
         # self.background_color = "#9b9b9b"
         # self.secondary_color = "#c5c5c5"
 
+        self.global_stylesheet = load_global_stylesheet(self.application_stylesheet_path, self.color_theme)
         self.vehicle_params_lookup = load_saved_vehicle_params()
         self.vehicle_params_options = list(self.vehicle_params_lookup.keys())
         self.static_constraints_lookup = load_saved_static_constraints()
@@ -116,20 +130,19 @@ class ApplicationStatus:
         with open(self.application_status_path, "r") as file:
             application_status_dict = json.load(file)
 
-        self.selected_graph_network_name = application_status_dict["graph_network_name"]
+        self.selected_graph_network_name = application_status_dict["road_network_name"]
         self.planner_sampling_time = application_status_dict["planner_sampling_time"]
         self.planning_strategy_name = application_status_dict["planning_strategy"]
 
-        self.path_selector_waypoints: list[WaypointWithHeading] = []
+        self.selected_route: list[WaypointWithHeading] = []
         self.initial_world_x_limit = 80
         self.initial_world_y_limit = 45
 
         self.world_x_limit = self.initial_world_x_limit
         self.world_y_limit = self.initial_world_y_limit
 
-        self.path_manager = PathManager()
         self.path_obstacles: list[Rectangle] = []
-        self._ref_path_df = None
+        self.ref_path: Path = None
 
         self.lane_width = 3.7
         self.lane_count = 3
@@ -163,22 +176,6 @@ class ApplicationStatus:
     def path_width(self):
         return self.lane_count * self.lane_width
 
-    @property
-    def ref_path_df(self):
-        # compute a more accurate path discretisation than needed for visualisation
-        if self._ref_path_df is None:
-            self._ref_path_df = self.path_manager.compute_new_evaluation(
-                step_size=0.01, path_width=self.path_width
-            )
-        return self._ref_path_df
-
-    @ref_path_df.setter
-    def ref_path_df(self, value):
-        self._ref_path_df = value
-
-    def delete_ref_path(self):
-        self._ref_path_df = None
-
     def validate(self) -> list[str]:
         errors = []
         if self.selected_graph_network_name is None:
@@ -190,7 +187,7 @@ class ApplicationStatus:
         if self.planning_strategy_name is None:
             errors.append("Planning strategy is not set")
 
-        if self.ref_path_df is None:
+        if self.ref_path is None:
             errors.append("Reference trajectory is not set")
 
         return errors

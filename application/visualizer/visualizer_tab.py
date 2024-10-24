@@ -12,12 +12,21 @@ from application.visualizer.widgets.simulation_visualizer_widget import (
     SimulationVisualizerWidget,
 )
 from dto.coord_transform import compute_path_frame_error
+from simulation.simulation_result import SimulationResult
+
+
+def preprocess_rewards(rewards: np.ndarray):
+    """Preprocess rewards to be visualized."""
+
+    return np.clip(rewards, 0, 5)  # 0-5 range of the reward function, outliers excluded
 
 
 class VisualizerTab(QWidget):
     def __init__(self, parent, current_app_status: ApplicationStatus):
         super().__init__(parent=parent)
 
+        self.vertical_widget = None
+        self.scroll_area = None
         self.current_app_status = current_app_status
         self.sim_running = False
         self.layout = QVBoxLayout(self)
@@ -47,15 +56,10 @@ class VisualizerTab(QWidget):
             widget = self.vertical_layout.itemAt(i).widget()
             widget.deleteLater()
 
-    def preprocess_rewards(self, rewards: np.ndarray):
-        """Preprocess rewards to be visualized."""
-
-        return np.clip(
-            rewards, 0, 5
-        )  # 0-5 range of the reward function, outliers excluded
-
     def init_visualization(self):
-        simulation_results = list(self.current_app_status.simulation_results.values())
+        simulation_results: list[SimulationResult] = list(
+            self.current_app_status.simulation_results.values()
+        )
 
         self.sim_visualizer_widget = SimulationVisualizerWidget(
             self.current_app_status.color_theme, parent=self
@@ -64,39 +68,43 @@ class VisualizerTab(QWidget):
         self.vertical_layout.addWidget(self.sim_visualizer_widget)
 
         self.sim_visualizer_widget.setup_ref_path(
-            self.current_app_status.ref_path_df,
+            self.current_app_status.ref_path.discretized,
             self.current_app_status.path_obstacles,
             self.current_app_status.world_x_limit,
             self.current_app_status.world_y_limit,
         )
         self.sim_visualizer_widget.visualize_results(simulation_results.copy())
 
-        Crosstrack_errors = [
-            (sim_result.iteration_infos.time, sim_result.iteration_infos.error_Y)
+        cross_track_errors = [
+            (sim_result.iteration_info_batch.time, sim_result.iteration_info_batch.error_Y)
             for sim_result in simulation_results
         ]
 
-        Heading_errors = [
-            (sim_result.iteration_infos.time, sim_result.iteration_infos.error_Psi)
+
+        heading_errors = [
+            (
+                sim_result.iteration_info_batch.time,
+                sim_result.iteration_info_batch.error_Psi,
+            )
             for sim_result in simulation_results
         ]
 
         Velocity_errors = [
-            (sim_result.iteration_infos.time, sim_result.iteration_infos.error_x_dot)
+            (sim_result.iteration_info_batch.time, sim_result.iteration_info_batch.error_x_dot)
             for sim_result in simulation_results
         ]
 
         Scores = [
             (
-                sim_result.iteration_infos.time,
-                self.preprocess_rewards(sim_result.iteration_infos.reward),
+                sim_result.iteration_info_batch.time,
+                preprocess_rewards(sim_result.iteration_info_batch.reward),
             )
             for sim_result in simulation_results
         ]
 
-        Crosstrack_errors_path = []
-        Heading_errors_path = []
-        Path_Scores = []
+        cross_track_errors_path = []
+        heading_errors_path = []
+        path_Scores = []
         for sim_result in simulation_results:
             (
                 _,
@@ -104,15 +112,15 @@ class VisualizerTab(QWidget):
                 error_psi,
                 _,
             ) = compute_path_frame_error(
-                X_path=sim_result.iteration_infos.X_path.values,
-                Y_path=sim_result.iteration_infos.Y_path.values,
-                Psi_path=sim_result.iteration_infos.Psi_path.values,
-                X_vehicle=sim_result.iteration_infos.X.values,
-                Y_vehicle=sim_result.iteration_infos.Y.values,
-                Psi_vehicle=sim_result.iteration_infos.Psi.values,
+                X_path=sim_result.iteration_info_batch.X_path,
+                Y_path=sim_result.iteration_info_batch.Y_path,
+                Psi_path=sim_result.iteration_info_batch.Psi_path,
+                X_vehicle=sim_result.iteration_info_batch.X,
+                Y_vehicle=sim_result.iteration_info_batch.Y,
+                Psi_vehicle=sim_result.iteration_info_batch.Psi
             )
 
-            delta_d = np.diff(sim_result.iteration_infos.d)
+            delta_d = np.diff(sim_result.iteration_info_batch.d)
             delta_d = np.insert(delta_d, 0, 0.0)
             path_rewards = (
                 self.current_app_status.reward_manager.compute_reward_without_velocity(
@@ -120,12 +128,12 @@ class VisualizerTab(QWidget):
                 )
             )
 
-            Crosstrack_errors_path.append(
-                (sim_result.iteration_infos.time, error_Y_path_frame)
+            cross_track_errors_path.append(
+                (sim_result.iteration_info_batch.time, error_Y_path_frame)
             )
-            Heading_errors_path.append((sim_result.iteration_infos.time, error_psi))
+            heading_errors_path.append((sim_result.iteration_info_batch.time, error_psi))
 
-            Path_Scores.append((sim_result.iteration_infos.time, path_rewards))
+            path_Scores.append((sim_result.iteration_info_batch.time, path_rewards))
 
         names = [
             sim_result.simulation_info.identifier for sim_result in simulation_results
@@ -138,7 +146,7 @@ class VisualizerTab(QWidget):
         self.Crosstrack_error_plotter_widget = ErrorPlotterWidget(
             color_theme=self.current_app_status.color_theme,
             title="Vehicle - Trajectory Crosstrack Error Plot",
-            trajectories=Crosstrack_errors,
+            trajectories=cross_track_errors,
             names=names,
             y_axis_label="CTE [m]",
         )
@@ -148,7 +156,7 @@ class VisualizerTab(QWidget):
         self.Crosstrack_error_path_plotter_widget = ErrorPlotterWidget(
             color_theme=self.current_app_status.color_theme,
             title="Vehicle - Path Crosstrack Error Plot",
-            trajectories=Crosstrack_errors_path,
+            trajectories=cross_track_errors_path,
             names=names,
             y_axis_label="CTE [m]",
             y_upper_bound=self.current_app_status.reward_manager.max_lateral_error_threshold,
@@ -165,7 +173,7 @@ class VisualizerTab(QWidget):
         self.Heading_error_plotter_widget = ErrorPlotterWidget(
             color_theme=self.current_app_status.color_theme,
             title="Vehicle - Trajectory Heading Error Plot",
-            trajectories=Heading_errors,
+            trajectories=heading_errors,
             names=names,
             y_axis_label="Heading [rad]",
         )
@@ -176,7 +184,7 @@ class VisualizerTab(QWidget):
         self.Heading_error_path_plotter_widget = ErrorPlotterWidget(
             color_theme=self.current_app_status.color_theme,
             title="Vehicle - Path Heading Error Plot",
-            trajectories=Heading_errors_path,
+            trajectories=heading_errors_path,
             names=names,
             y_axis_label="Heading [rad]",
             y_lower_bound=-self.current_app_status.reward_manager.max_heading_error_threshold,
@@ -218,7 +226,7 @@ class VisualizerTab(QWidget):
         self.Path_Rewards_plotter_widget = ErrorPlotterWidget(
             color_theme=self.current_app_status.color_theme,
             title="Vehicle - Path Performance Plot",
-            trajectories=Path_Scores,
+            trajectories=path_Scores,
             names=names,
             y_axis_label="Score",
             y_upper_bound=5,
@@ -229,7 +237,7 @@ class VisualizerTab(QWidget):
         horiz_layout_4.addWidget(self.Path_Rewards_plotter_widget, stretch=1)
 
         progress_along_track = [
-            (sim_result.iteration_infos.time, sim_result.iteration_infos.S_path)
+            (sim_result.iteration_info_batch.time, sim_result.iteration_info_batch.S_path)
             for sim_result in simulation_results
         ]
 

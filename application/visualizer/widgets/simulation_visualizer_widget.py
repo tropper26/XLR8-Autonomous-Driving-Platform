@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 from PyQt5.QtCore import Qt
 from matplotlib import gridspec
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -15,13 +14,14 @@ from PyQt5.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
 )
-
 from control.controller_viz_info import ControllerVizInfo, Types
-from matplotlib.patches import Rectangle as pltRectangle
+from matplotlib.patches import Rectangle as pltRectangle, Polygon
 
 from dto.color_theme import ColorTheme
 from dto.geometry import Rectangle
-from simulation.simulation_info import SimulationResult
+from parametric_curves.path_segment import PathSegmentDiscretization
+from simulation.iteration_info import IterationInfo, IterationInfoBatch
+from simulation.simulation_result import SimulationResult
 from state_space.states.state import State
 from vehicle.vehicle_params import VehicleParams
 
@@ -60,6 +60,13 @@ class SimulationVisualizerWidget(QWidget):
         parent=None,
     ):
         super().__init__(parent)
+        self.invalid_trajectories_plot = None
+        self.alternate_trajectories_plot = None
+        self.reference_trajectory_plot = None
+        self.path_obstacles = None
+        self.ref_path = None
+        self.gs = None
+        self.table = None
         self.color_theme = color_theme
         self.controller_viz_ref_plots = None
         self.reward_exp_label = None
@@ -71,13 +78,13 @@ class SimulationVisualizerWidget(QWidget):
         self.ref_X_plot = None
         self.ref_psi_plot = None
         self.ref_x_dot_plot = None
-        self.frame_count = None
-        self.newest_sim_results = None
+        self.max_frame_count = None
+        self.new_sim_results = None
         self.controller_viz_plots = None
         self.main_plot_ax = None
         self.animation = None
         self.current_index = None
-        self.sim_results = None
+        self.current_sim_results_to_visualize: list[SimulationResult] = []
         self.car_trajectory_plots = None
         self.canvas = None
         self.main_plot_fig = None
@@ -116,6 +123,7 @@ class SimulationVisualizerWidget(QWidget):
         ]
 
         self.vehicle_front_wheel_color = "gray"
+        self.central_line_color = "gray"
         self.path_color = "black"
         self.obstacle_color = "gray"
         self.alternate_trajectory_color = "green"
@@ -328,34 +336,33 @@ class SimulationVisualizerWidget(QWidget):
         for text in legend.get_texts():
             text.set_color("black")
 
-    def init_subplots(self, full_state_df: pd.DataFrame):
-        S_ref = full_state_df.S_ref.values
-
-        self.ref_X_plot.set_data(S_ref, full_state_df.X_ref.values)
+    def init_subplots(self, iteration_info_batch: IterationInfoBatch):
+        self.ref_X_plot.set_data(iteration_info_batch.S_ref, iteration_info_batch.X_ref)
         update_axes_limits(self.ref_X_plot.axes, padding=0.5)
 
-        self.ref_Y_plot.set_data(S_ref, full_state_df.Y_ref.values)
+        self.ref_Y_plot.set_data(iteration_info_batch.S_ref, iteration_info_batch.Y_ref)
         update_axes_limits(self.ref_Y_plot.axes, padding=0.5)
 
-        self.ref_psi_plot.set_data(S_ref, full_state_df.Psi_ref.values)
+        self.ref_psi_plot.set_data(
+            iteration_info_batch.S_ref, iteration_info_batch.Psi_ref
+        )
         update_axes_limits(self.ref_psi_plot.axes, padding=0.5)
 
         self.ref_x_dot_plot.set_data(
-            S_ref,
-            full_state_df.x_dot_ref.values,
+            iteration_info_batch.S_ref, iteration_info_batch.x_dot_ref
         )
         update_axes_limits(self.ref_x_dot_plot.axes, padding=0.5)
 
     def setup_ref_path(
         self,
-        ref_path: pd.DataFrame,
+        discretized_path: PathSegmentDiscretization,
         path_obstacles: list[Rectangle],
         simulation_x_limit: float,
         simulation_y_limit: float,
     ):
         self.main_plot_ax.clear()
 
-        self.ref_path = ref_path
+        self.ref_path = discretized_path
         self.path_obstacles = path_obstacles
 
         for rect in path_obstacles:
@@ -370,28 +377,26 @@ class SimulationVisualizerWidget(QWidget):
             self.main_plot_ax.add_patch(patch)
 
         self.main_plot_ax.plot(
-            ref_path.X,
-            ref_path.Y,
+            discretized_path.X,
+            discretized_path.Y,
             "--",
             linewidth=1,
-            label="Ref Path",
-            color=self.path_color,
+            label="Central Line",
+            color=self.central_line_color,
         )
 
-        self.main_plot_ax.plot(
-            ref_path.X_bounds_positive,
-            ref_path.Y_bounds_positive,
-            "-",
-            linewidth=3,
-            color=self.path_color,
-        )
-        self.main_plot_ax.plot(
-            ref_path.X_bounds_negative,
-            ref_path.Y_bounds_negative,
-            "-",
-            linewidth=3,
-            color=self.path_color,
-        )
+        for i in range(0, discretized_path.lateral_X.shape[1], 2):
+            lateral_X = discretized_path.lateral_X[:, i]
+            lateral_Y = discretized_path.lateral_Y[:, i]
+
+            self.main_plot_ax.plot(
+                lateral_X,
+                lateral_Y,
+                "-",
+                linewidth=3,
+                color=self.path_color,
+            )
+
         (self.reference_trajectory_plot,) = self.main_plot_ax.plot(
             [],
             [],
@@ -499,34 +504,17 @@ class SimulationVisualizerWidget(QWidget):
     def visualize_results(self, new_sim_res: list[SimulationResult]):
         if isinstance(new_sim_res, SimulationResult):
             new_sim_res = [new_sim_res]
+
         self.sim_results_counter += 1
 
         for index in range(len(new_sim_res) - self.vehicle_plot_count):
-            self.add_car_plot(new_sim_res[index].vp)
+            self.add_car_plot(new_sim_res[index].vehicle_params_for_visualization)
 
-        self.newest_sim_results = new_sim_res.copy()
+        self.new_sim_results = new_sim_res.copy()
 
-        if not self.animation:
-            self.sim_results = self.newest_sim_results.copy()
-            self.last_sim_nr = self.sim_results_counter
-
-            frame_count = max(
-                [sim.iteration_infos.shape[0] for sim in self.sim_results]
-            )
-            animation_step = (frame_count / 144) + 1
-            for sim in self.sim_results:
-                last_row = sim.iteration_infos.iloc[-1]
-                sim.iteration_infos = sim.iteration_infos.iloc[:: int(animation_step)]
-                if sim.iteration_infos.iloc[-1].time != last_row.time:
-                    last_row_df = pd.DataFrame(last_row).transpose()
-                    sim.iteration_infos = pd.concat(
-                        [sim.iteration_infos, last_row_df], ignore_index=True
-                    )
-
-            self.frame_count = max(
-                [sim.iteration_infos.shape[0] for sim in self.sim_results]
-            )  # changes after slicing the df
-            self.init_subplots(new_sim_res[0].iteration_infos)
+        if not self.animation:  # First time visualization
+            self.update_results_to_visualize(self.new_sim_results.copy())
+            self.init_subplots(self.current_sim_results_to_visualize[0].iteration_info_batch)
 
             self.buttons_enabled = True
             self.playing = True
@@ -534,28 +522,47 @@ class SimulationVisualizerWidget(QWidget):
             self.animation = FuncAnimation(
                 self.main_plot_fig,
                 self.update_plots,
-                frames=self.frame_count,  # if it's a number it does range(nr) if its a list it does the list
+                frames=self.max_frame_count,  # if it's a number it does range(nr) if its a list it does the list
                 interval=1,
                 repeat=True,
-                blit=False,  # blit=True is faster but doesn't work with the cursor and rewind
+                blit=False,  # blit=True is faster but doesn't work with rewind
             )
 
         self.canvas.draw()
 
-    def on_animation_end(self):
-        if self.sim_results_counter > self.last_sim_nr:
-            self.sim_results = self.newest_sim_results.copy()
-            self.last_sim_nr = self.sim_results_counter
+    def update_results_to_visualize(self, new_sim_res: list[SimulationResult]) -> list[SimulationResult]:
+        sim_results = []
+        self.last_sim_nr = self.sim_results_counter
 
-            self.frame_count = max(
-                [sim.iteration_infos.shape[0] for sim in self.sim_results]
+        frame_count = max(
+            [len(sim.iteration_infos) for sim in new_sim_res]
+        )
+        animation_step = int(frame_count / 144) + 1
+        for sim_result in self.new_sim_results:
+            sim_result_to_animate = sim_result.down_sample_for_visualization(
+                animation_step
             )
+            sim_results.append(sim_result_to_animate)
+
+        self.max_frame_count = max(
+            [len(sim.iteration_infos) for sim in sim_results]
+        )
+
+        self.current_sim_results_to_visualize = sim_results
+
+        return self.current_sim_results_to_visualize
+
+    def on_animation_end(self):
+        if (
+            self.sim_results_counter > self.last_sim_nr
+        ):  # New simulation results received
+            self.update_results_to_visualize(self.new_sim_results.copy())
 
             self.main_plot_ax.title.set_text(
-                f"Run: {self.sim_results[0].run_index + 1}"
+                f"Run: {self.current_sim_results_to_visualize[0].run_index + 1}"
             )
 
-            self.init_subplots(self.sim_results[0].iteration_infos)
+            self.init_subplots(self.current_sim_results_to_visualize[0].iteration_info_batch)
 
         if self.playing:
             self.current_index = 0
@@ -564,6 +571,10 @@ class SimulationVisualizerWidget(QWidget):
         if index is not None:
             self.current_index = index
         index = self.current_index
+
+        vehicle_polygon: Polygon
+        wheel_polygon: Polygon
+        sim_result: SimulationResult
 
         for (
             vehicle_polygon,
@@ -578,24 +589,23 @@ class SimulationVisualizerWidget(QWidget):
             self.car_trajectory_plots,
             self.controller_viz_plots,
             self.controller_viz_ref_plots,
-            self.sim_results,
+            self.current_sim_results_to_visualize,
         ):
-            if (
-                index < sim_result.iteration_infos.shape[0]
-            ):  # Check if index is in bounds
-                df_up_to_index = sim_result.iteration_infos.iloc[: index + 1]
-                iteration = sim_result.iteration_infos.iloc[index]
+            if index < len(sim_result.iteration_infos):
+                current_iteration = sim_result.iteration_infos[index]
 
                 current_state = State(
-                    iteration.X,
-                    iteration.Y,
-                    iteration.Psi,
-                    iteration.x_dot,
-                    iteration.y_dot,
-                    iteration.psi_dot,
+                    current_iteration.X,
+                    current_iteration.Y,
+                    current_iteration.Psi,
+                    current_iteration.x_dot,
+                    current_iteration.y_dot,
+                    current_iteration.psi_dot,
                 )
                 vehicle_shape, wheel_shapes = draw_vehicle(
-                    current_state, iteration.d, sim_result.vp
+                    current_state,
+                    current_iteration.d,
+                    sim_result.vehicle_params_for_visualization,
                 )
                 vehicle_polygon.set_xy(vehicle_shape)
 
@@ -603,75 +613,67 @@ class SimulationVisualizerWidget(QWidget):
                     wheel_polygon.set_xy(wheel_shape)
 
                 car_trajectory_plot.set_data(
-                    df_up_to_index.X.values,
-                    df_up_to_index.Y.values,
+                    sim_result.iteration_info_batch.X[: index + 1],
+                    sim_result.iteration_info_batch.Y[: index + 1],
                 )
 
-                if isinstance(iteration.controller_viz_info, ControllerVizInfo):
+                if isinstance(current_iteration.controller_viz_info, ControllerVizInfo):
                     controller_viz_plot.set_data(
-                        iteration.controller_viz_info.X,
-                        iteration.controller_viz_info.Y,
+                        current_iteration.controller_viz_info.X,
+                        current_iteration.controller_viz_info.Y,
                     )
 
                     controller_viz_ref_plot.set_data(
-                        iteration.controller_viz_info.ref_X,
-                        iteration.controller_viz_info.ref_Y,
+                        current_iteration.controller_viz_info.ref_X,
+                        current_iteration.controller_viz_info.ref_Y,
                     )
 
-                    if iteration.controller_viz_info.viz_type == Types.Line:
+                    if current_iteration.controller_viz_info.viz_type == Types.Line:
                         controller_viz_plot.set_linestyle("-")
                         controller_viz_ref_plot.set_linestyle("-")
                         controller_viz_plot.set_marker("o")
                         controller_viz_ref_plot.set_marker("o")
-                    elif iteration.controller_viz_info.viz_type == Types.Point:
+                    elif current_iteration.controller_viz_info.viz_type == Types.Point:
                         controller_viz_plot.set_linestyle("None")
                         controller_viz_ref_plot.set_linestyle("None")
                         controller_viz_plot.set_marker("x")
                         controller_viz_ref_plot.set_marker("x")
 
-        sim_result = self.sim_results[0]
-        if index < sim_result.iteration_infos.shape[0]:
-            iteration = sim_result.iteration_infos.iloc[index]
-            df_up_to_index = sim_result.iteration_infos.iloc[: index + 1]
+        sim_result = self.current_sim_results_to_visualize[
+            0
+        ]  # Currently display only for first simulation
+        if index < len(sim_result.iteration_infos):
+            current_iteration = sim_result.iteration_infos[index]
 
+            S_ref_till_index = sim_result.iteration_info_batch.S_ref[: index + 1]
             self.X_plot.set_data(
-                df_up_to_index.S_ref.values,
-                df_up_to_index.X.values,
+                S_ref_till_index, sim_result.iteration_info_batch.X[: index + 1]
             )
             self.Y_plot.set_data(
-                df_up_to_index.S_ref.values,
-                df_up_to_index.Y.values,
+                S_ref_till_index, sim_result.iteration_info_batch.Y[: index + 1]
             )
-
             self.x_dot_plot.set_data(
-                df_up_to_index.S_ref.values,
-                df_up_to_index.x_dot.values,
+                S_ref_till_index, sim_result.iteration_info_batch.x_dot[: index + 1]
             )
             self.psi_plot.set_data(
-                df_up_to_index.S_ref.values,
-                df_up_to_index.Psi.values,
+                S_ref_till_index, sim_result.iteration_info_batch.psi_dot[: index + 1]
             )
 
-            X = iteration.reference_trajectory.X.values[::1]
-            Y = iteration.reference_trajectory.Y.values[::1]
+            X = current_iteration.reference_trajectory.discretized.X
+            Y = current_iteration.reference_trajectory.discretized.Y
             self.reference_trajectory_plot.set_data(X, Y)
 
-            alternate_trajectories = iteration.alternate_trajectories
-            invalid_trajectories = iteration.invalid_trajectories
+            alternate_trajectories = current_iteration.alternate_trajectories
+            invalid_trajectories = current_iteration.invalid_trajectories
 
+            # YES WE DO NEED THESE EXTRA CHECKS
             if len(alternate_trajectories) > 0 or len(invalid_trajectories) > 0:
                 if len(alternate_trajectories) > 0:
                     X = np.concatenate(
-                        [
-                            alternate_trajectory.X.values
-                            for alternate_trajectory in alternate_trajectories
-                        ]
+                        [at.discretized.X for at in alternate_trajectories]
                     )
                     Y = np.concatenate(
-                        [
-                            alternate_trajectory.Y.values
-                            for alternate_trajectory in alternate_trajectories
-                        ]
+                        [at.discretized.Y for at in alternate_trajectories]
                     )
 
                     self.alternate_trajectories_plot.set_offsets(np.c_[X, Y])
@@ -680,16 +682,10 @@ class SimulationVisualizerWidget(QWidget):
 
                 if len(invalid_trajectories) > 0:
                     X = np.concatenate(
-                        [
-                            invalid_trajectory.X.values
-                            for invalid_trajectory in invalid_trajectories
-                        ]
+                        [it.discretized.X for it in invalid_trajectories]
                     )
                     Y = np.concatenate(
-                        [
-                            invalid_trajectory.Y.values
-                            for invalid_trajectory in invalid_trajectories
-                        ]
+                        [it.discretized.Y for it in invalid_trajectories]
                     )
 
                     self.invalid_trajectories_plot.set_offsets(np.c_[X, Y])
@@ -697,29 +693,31 @@ class SimulationVisualizerWidget(QWidget):
                     self.invalid_trajectories_plot.set_offsets(np.c_[[], []])
 
             self.reward_exp_label.setText(
-                f"Reward Explaination: {iteration.reward_explaination}"
+                f"Reward Explanation: {current_iteration.reward_explanation}"
             )
 
             self.update_state_table(sim_result.iteration_infos, index)
 
             self.canvas.draw_idle()  # Redraw the canvas when manually updating the plots
 
-        if index == self.frame_count - 1:
+        if index == self.max_frame_count - 1:
             self.on_animation_end()
 
-        return (
-            self.vehicle_polygons,
-            self.wheel_polygons,
-            self.car_trajectory_plots,
-            self.controller_viz_plots,
-            self.controller_viz_ref_plots,
+        return iter(
+            (
+                self.vehicle_polygons,
+                self.wheel_polygons,
+                self.car_trajectory_plots,
+                self.controller_viz_plots,
+                self.controller_viz_ref_plots,
+            )
         )
 
-    def concat_column_from_dfs(self, df_list, column_name):
-        return pd.concat([df[column_name] for df in df_list], ignore_index=True)
-
-    def update_state_table(self, df, index):
-        df = df[self.columns_to_display]
+    def update_state_table(self, iteration_infos: list[IterationInfo], index: int):
+        table = [
+            iteration_info.as_table(self.columns_to_display)
+            for iteration_info in iteration_infos
+        ]
 
         if index == 0:
             self.clear_cells([0, 1], self.column_count)
@@ -727,19 +725,19 @@ class SimulationVisualizerWidget(QWidget):
         elif index == 1:
             self.clear_cells([0], self.column_count)
             table_row_index_offset = 1
-        elif index == self.frame_count - 2:
+        elif index == self.max_frame_count - 2:
             self.clear_cells([4], self.column_count)
             table_row_index_offset = 0
-        elif index == self.frame_count - 1:
+        elif index == self.max_frame_count - 1:
             self.clear_cells([3, 4], self.column_count)
             table_row_index_offset = 0
         else:
             table_row_index_offset = 0
 
         start_index = max(index - 2, 0)
-        end_index = min(index + 3, len(df))
+        end_index = min(index + 3, len(iteration_infos))
         # Update table content
-        self.set_table_text(df, start_index, end_index, table_row_index_offset)
+        self.set_table_text(table, start_index, end_index, table_row_index_offset)
 
     def clear_cells(self, row_indices, column_count):
         """Clears text for specified rows."""
@@ -748,11 +746,13 @@ class SimulationVisualizerWidget(QWidget):
                 if self.table.item(row, col):
                     self.table.item(row, col).setText("")
 
-    def set_table_text(self, df, start_index, end_index, offset):
+    def set_table_text(
+        self, table: list[list[float]], start_index: int, end_index: int, offset: int
+    ):
         """Set table cells from DataFrame values with rounding for floats."""
         for i, row_idx in enumerate(range(start_index, end_index)):
-            for j in range(df.shape[1]):
-                value = df.iloc[row_idx, j]
+            for j in range(self.column_count):
+                value = table[row_idx][j]
                 text = str(round(value, 2)) if isinstance(value, float) else str(value)
                 if self.table.item(i + offset, j):
                     self.table.item(i + offset, j).setText(text)
@@ -773,14 +773,14 @@ class SimulationVisualizerWidget(QWidget):
         if (
             self.buttons_enabled
             and not self.playing
-            and self.current_index < self.frame_count - 1
+            and self.current_index < self.max_frame_count - 1
         ):
             self.current_index += 1
             self.update_plots()
 
     def navigate_last(self):
         if self.buttons_enabled and not self.playing:
-            self.current_index = self.frame_count - 1
+            self.current_index = self.max_frame_count - 1
             self.update_plots()
 
     def reset(self):
@@ -876,7 +876,7 @@ def calculate_ackerman_angles(steering_angle, wheelbase, width):
 
 def draw_vehicle(
     current_state: State, steering_angle: float, vp: VehicleParams
-) -> (list, list):
+) -> tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]:
     vehicle_shape = compute_rectangle_given_center(
         current_state.X,
         current_state.Y,
