@@ -131,7 +131,7 @@ class Environment:
         )
 
         for i in range(len(self.full_ref_path)):
-            self.grid.insert_node_into_grid(
+            self.grid.insert_node(
                 i, self.full_ref_path.X[i], self.full_ref_path.Y[i]
             )
 

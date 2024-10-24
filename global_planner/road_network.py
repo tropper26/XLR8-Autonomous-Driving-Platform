@@ -91,7 +91,7 @@ class RoadNetwork:
         self.grid = SpatialGrid(min_x, max_x, min_y, max_y, grid_cell_count)
 
         for node_id, data in self.G.nodes(data=True):
-            self.grid.insert_node_into_grid(node_id, data["x"], data["y"])
+            self.grid.insert_node(node_id, data["x"], data["y"])
 
     @property
     def nodes(self):
@@ -114,7 +114,7 @@ class RoadNetwork:
         return list(self.G.successors(node_id))
 
     def update_node_position(self, node_id: int, new_x: float, new_y: float):
-        self.grid.update_node_in_grid(
+        self.grid.update_node(
             node_id,
             self.G.nodes[node_id]["x"],
             self.G.nodes[node_id]["y"],
