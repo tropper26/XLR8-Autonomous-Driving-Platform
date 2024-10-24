@@ -51,12 +51,10 @@ def compute_lateral_points(X, Y, Psi, dist):
     ) * dist  # Normal x components (90 degrees rotation of the tangent vector)
     ny = dx_dt / norms * dist
 
-    X_pos = X + nx
-    Y_pos = Y + ny
-    X_neg = X - nx
-    Y_neg = Y - ny
+    X = X + nx
+    Y = Y + ny
 
-    return X_pos, Y_pos, X_neg, Y_neg
+    return X, Y
 
 
 def compute_candidate_trajectory_params(
@@ -66,7 +64,22 @@ def compute_candidate_trajectory_params(
     look_ahead_distance: float,
     lateral_candidate_count: int,
 ):
-    candidate_trajectory_params_list = []
+    # get the first index that is ahead of the look ahead distance
+    target_index = int(
+        observed_path_discretization.S.searchsorted(
+            observed_path_discretization.S[0] + look_ahead_distance
+        )
+    )
+
+    target_index = min(
+        target_index, len(observed_path_discretization) - 1
+    )  # Clamp target index
+
+    target_X, target_Y, target_Psi = observed_path_discretization.row_at(
+        target_index, ("X", "Y", "Psi")
+    )
+
+    candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)]
 
     for i in range(lateral_candidate_count):
         # get the first index that is ahead of the look ahead distance
@@ -84,32 +97,32 @@ def compute_candidate_trajectory_params(
             target_index, ("X", "Y", "Psi")
         )
 
-        candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)] if i == 0 else []
+        # candidate_target_points: list[Waypoint] = [Waypoint(x=target_X, y=target_Y)] if i == 0 else []
 
         lane_centers = path.compute_offset_distances(lane_width_infos.left_lane_count, lane_width_infos.right_lane_count, lane_width_infos.lane_widths)[1::2]
 
-        X_pos, Y_pos, X_neg, Y_neg = compute_lateral_points(
+        X, Y = compute_lateral_points(
             target_X, target_Y, target_Psi, np.asarray(lane_centers)
         )
-        for i in range(len(lane_centers)):
-            candidate_target_points.append(Waypoint(x=X_pos[i], y=Y_pos[i]))
-            candidate_target_points.append(Waypoint(x=X_neg[i], y=Y_neg[i]))
 
-        candidate_trajectory_params_list.extend([
-            SpiralInputParams(
-                x_0=vehicle_position.x,
-                y_0=vehicle_position.y,
-                psi_0=vehicle_position.heading,
-                k_0=0.0,
-                x_f=point.x,
-                y_f=point.y,
-                psi_f=target_Psi,
-                k_f=0.0,
-                k_max=1.0,  # TODO this should actually be: k_max = min{k_max1, k_max2},
-                # TODO where k_max1 = tan(max_d)/wheelbase and k_max2 = a_lat_max / (v^2 + 0.0(...)1)
-            )
-            for point in candidate_target_points
-        ])
+        for i in range(len(lane_centers)):
+            candidate_target_points.append(Waypoint(x=X[i], y=Y[i]))
+
+    candidate_trajectory_params_list = [
+        SpiralInputParams(
+            x_0=vehicle_position.x,
+            y_0=vehicle_position.y,
+            psi_0=vehicle_position.heading,
+            k_0=0.0,
+            x_f=point.x,
+            y_f=point.y,
+            psi_f=target_Psi,
+            k_f=0.0,
+            k_max=1.0,  # TODO this should actually be: k_max = min{k_max1, k_max2},
+            # TODO where k_max1 = tan(max_d)/wheelbase and k_max2 = a_lat_max / (v^2 + 0.0(...)1)
+        )
+        for point in candidate_target_points
+    ]
 
     return candidate_trajectory_params_list
 

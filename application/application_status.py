@@ -145,7 +145,8 @@ class ApplicationStatus:
         self.ref_path: Path = None
 
         self.lane_width = 3.7
-        self.lane_count = 3
+        self.lane_count = 2
+        self.random_obstacle_count = 0
 
         self.path_visualisation_step_size = 0.25
 

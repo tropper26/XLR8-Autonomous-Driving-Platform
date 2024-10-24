@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QButtonGroup,
     QRadioButton,
-    QSpacerItem,
+    QSpacerItem, QScrollArea,
 )
 
 from application.application_status import ApplicationStatus
@@ -44,9 +44,14 @@ class PathPlannerWidget(QWidget):
 
         self.layout.addWidget(self.path_canvas)
 
+
         self.settings_widget = QWidget(self)
         self.settings_layout = QVBoxLayout(self.settings_widget)
-        self.layout.addWidget(self.settings_widget, stretch=1)
+
+        self.settings_scroll_area = QScrollArea(self)
+        self.settings_scroll_area.setWidget(self.settings_widget)
+        self.settings_scroll_area.setWidgetResizable(True)
+        self.layout.addWidget(self.settings_scroll_area, stretch=1)
 
         self.settings_widget.setStyleSheet(
             """
@@ -156,6 +161,12 @@ class PathPlannerWidget(QWidget):
             value=self.current_app_status.lane_count,
             slot=self.update_lane_count,
         )
+        self.add_field(
+            "Number of random obstacles",
+            "Enter number of obstacles",
+            value=self.current_app_status.random_obstacle_count,
+            slot=self.update_random_obstacle_count,
+        )
 
     def add_field(self, label_text, placeholder, value=None, slot=None):
         self.field_widget = QWidget(self.settings_widget)
@@ -240,6 +251,16 @@ class PathPlannerWidget(QWidget):
             if lane_count <= 0:
                 raise ValueError
             self.current_app_status.lane_count = lane_count
+        except ValueError:
+            pass  # Handle or log error appropriately
+
+    @pyqtSlot(str, name="update_random_obstacle_count")
+    def update_random_obstacle_count(self, value):
+        try:
+            random_obstacles_count = int(value)
+            if random_obstacles_count <= 0:
+                raise ValueError
+            self.current_app_status.random_obstacles_count = random_obstacles_count
         except ValueError:
             pass  # Handle or log error appropriately
 

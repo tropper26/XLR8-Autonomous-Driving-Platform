@@ -105,7 +105,7 @@ class PathSegmentDiscretization(CurveDiscretization):
         """
         dX_dt = np.cos(self.Psi)
         dY_dt = np.sin(self.Psi)
-        norms = np.sqrt(dX_dt**2 + dY_dt**2)
+        norms = np.hypot(dX_dt, dY_dt)
         nX = -dY_dt / norms
         nY = dX_dt / norms
         # Initialize output arrays

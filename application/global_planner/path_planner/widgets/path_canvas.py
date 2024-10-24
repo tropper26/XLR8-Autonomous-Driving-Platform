@@ -1,3 +1,4 @@
+import random
 from enum import Enum, auto
 
 from PyQt5.QtCore import pyqtSignal, QPointF, Qt, QRectF
@@ -594,3 +595,16 @@ class PathCanvas(ZoomableGraphicsView):
                 pos.x() - self.mouse_pos_text_item.boundingRect().width() - offset_x,
                 pos.y() - self.mouse_pos_text_item.boundingRect().height() - offset_y,
             )
+
+    def spawn_random_obstacles(self, num_obstacles: int):
+        for segment in self.path_manager.path_segments:
+            for _ in range(num_obstacles):
+                index = random.randrange(0, len(segment.discretized))
+                x = segment.discretized.X[index]
+                y = segment.discretized.Y[index]
+                x, y = self.world_to_canvas(x, y)
+                width = random.randrange(2, 10)
+                height = random.randrange(2, 10)
+                self.obstacles.append(self.add_obstacle(x, y, width, height))
+
+        self.emit_new_obstacles()
