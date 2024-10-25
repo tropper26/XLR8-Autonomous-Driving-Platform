@@ -138,7 +138,7 @@ class PathPlannerWidget(QWidget):
         self.settings_layout.addSpacerItem(QSpacerItem(0, 20))
 
         self.add_field(
-            "Number of random obstacles per segment",
+            "Rand. Obstacles / Segment",
             "Enter number of obstacles",
             value=self.current_app_status.random_obstacle_count,
             slot=self.update_random_obstacle_count,
@@ -162,7 +162,7 @@ class PathPlannerWidget(QWidget):
             slot=self.update_lane_width,
         )
         self.add_field(
-            "Number of Lanes",
+            "Number of Extra Lanes",
             "Enter number of lanes",
             value=self.current_app_status.lane_count,
             slot=self.update_lane_count,
@@ -248,9 +248,11 @@ class PathPlannerWidget(QWidget):
     def update_lane_count(self, value):
         try:
             lane_count = int(value)
-            if lane_count <= 0:
+            if lane_count < 0:
                 raise ValueError
             self.current_app_status.lane_count = lane_count
+            lane_widths = [self.current_app_status.lane_width] * ( lane_count +1 )
+            self.path_canvas.path_manager.update_lane_configuration(lane_count, 0,lane_widths)
         except ValueError:
             pass  # Handle or log error appropriately
 
