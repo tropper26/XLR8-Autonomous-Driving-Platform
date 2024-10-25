@@ -182,7 +182,6 @@ class SimulationVisualizerWidget(QWidget):
             "S_ref",
             "K_ref",
             "found_clear_trajectory",
-            "dont_draw"
         ]
 
         self.column_count = len(self.columns_to_display)

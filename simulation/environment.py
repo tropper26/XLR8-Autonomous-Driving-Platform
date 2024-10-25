@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 
 import numpy as np
 
@@ -46,10 +47,8 @@ class Environment:
         self.use_random_offset_starting_position = use_random_offset_starting_position
         self.training = training
 
-        self.observed_path_discretization = None
         self.current_closest_index_on_path = 0
         self.previous_control_action = None
-        self.visible_obstacles = []
 
         self.goal_location = WaypointWithHeading(
             x=self.path_discretization.X[-1],
@@ -100,7 +99,7 @@ class Environment:
             y_dot=0.0,
             psi_dot=0.0,
         )
-        starting_control_action: ControlAction = ControlAction(d=0.0, a=0.0)
+        starting_control_action = ControlAction(d=0.0, a=0.0)
 
         self.previous_control_action = starting_control_action
 
@@ -181,11 +180,11 @@ class Environment:
             self.plant.X
         )
 
-        self.current_closest_index_on_path = self._get_closest_index(
+        current_closest_index_on_path = self._get_closest_index(
             front_wheel_X, front_wheel_Y
         )
 
-        current_length = self.path_discretization.S[self.current_closest_index_on_path]
+        current_length = self.path_discretization.S[current_closest_index_on_path]
 
         # get the first index that is ahead of the look ahead distance
         target_index = int(self.path_discretization.S.searchsorted(
@@ -193,11 +192,11 @@ class Environment:
         ))
 
         # Slice the DataFrame between the current closest index and the target index
-        self.observed_path_discretization = self.path_discretization[
-                                            self.current_closest_index_on_path:target_index
+        observed_path_discretization = self.path_discretization[
+                                            current_closest_index_on_path:target_index
                                             ]
 
-        self.visible_obstacles = []
+        visible_obstacles = []
         for obstacle in self.path_obstacles:
             if obstacle.lifetime_seconds > 0:
                 closest_x = np.clip(front_wheel_X, obstacle.x, obstacle.x + obstacle.width)
@@ -216,13 +215,12 @@ class Environment:
 
                 if (closest_x_vehicle_frame ** 2 /
                     self.visible_distance ** 2 + closest_y_vehicle_frame ** 2 / 5 ** 2) <= 1:
-                    self.visible_obstacles.append(obstacle)
+                    visible_obstacles.append(deepcopy(obstacle))
 
         return (
-            self.current_closest_index_on_path,
-            self.observed_path_discretization,
-            self.observed_path_width,
-            self.visible_obstacles,
+            current_closest_index_on_path,
+            observed_path_discretization,
+            visible_obstacles,
         )
 
     def step(
@@ -230,34 +228,56 @@ class Environment:
     ) -> tuple[State, ControlAction, int, PathSegmentDiscretization, float, list[Rectangle]]:
         self.plant.update_control_input(control_action)
         self.plant.propagate_model(self.sampling_time)
-        self.get_observation()
+        self.current_closest_index_on_path, observed_path_discretization, visible_obstacles = self.get_observation()
 
         if base_noise_scale == 0.0:
             return (
                 self.plant.X,
                 self.plant.U,
                 self.current_closest_index_on_path,
-                self.observed_path_discretization,
+                observed_path_discretization,
                 self.observed_path_width,
-                self.visible_obstacles,
+                visible_obstacles,
             )
 
-        state_noise, control_noise, obstacle_noises = self._compute_noise(len(self.visible_obstacles), base_noise_scale)
+        state_noise, control_noise, obstacle_noises = self._compute_noise(len(visible_obstacles), base_noise_scale)
 
-        for obstacle_noise, obstacle in zip(obstacle_noises, self.visible_obstacles):
-            obstacle.x += obstacle_noise.x
-            obstacle.y += obstacle_noise.y
-            obstacle.width += obstacle_noise.width
-            obstacle.height += obstacle_noise.height
+        distance_to_obstacles = self.compute_distance_to_obstacles(self.plant.X, visible_obstacles)
+        distance_scaling_obstacles = self.scale_array(distance_to_obstacles)
+
+        for obstacle_noise, obstacle, distance_scaling in zip(obstacle_noises, visible_obstacles,
+                                                                  distance_scaling_obstacles):
+
+            obstacle.x += obstacle_noise.x * distance_scaling
+            obstacle.y += obstacle_noise.y * distance_scaling
+            obstacle.width += obstacle_noise.width * distance_scaling
+            obstacle.height += obstacle_noise.height * distance_scaling
 
         return (
             self.plant.X + state_noise,
             self.plant.U + control_noise,
             self.current_closest_index_on_path,
-            self.observed_path_discretization,
+            observed_path_discretization,
             self.observed_path_width,
-            self.visible_obstacles,
+            visible_obstacles,
         )
+
+    @staticmethod
+    def scale_array(arr):
+        result = np.zeros_like(arr)
+
+        result[arr >= 10] = 1
+        result[arr <= 1] = 0.01
+
+        mask = (arr > 1) & (arr < 10)
+        result[mask] = 0.01 + (arr[mask] - 1) * (1 - 0.01) / (10 - 1)
+
+        return result
+
+    @staticmethod
+    def compute_distance_to_obstacles(current_state: State, obstacles: list[Rectangle]) -> np.ndarray:
+        return np.hypot((current_state.X - np.array([ob.x_center for ob in obstacles])),
+                        (current_state.Y - np.array([ob.y_center for ob in obstacles])))
 
     @staticmethod
     def _compute_noise(obstacle_count: int, noise_scale_multiplier=1.0):
@@ -292,10 +312,10 @@ class Environment:
         obstacle_noises = []
         for _ in range(obstacle_count):
             obstacle_noise = Rectangle(
-                x=np.random.normal(0, 0.1 * noise_scale_multiplier),
-                y=np.random.normal(0, 0.1 * noise_scale_multiplier),
-                width=np.random.normal(0, 0.01 * noise_scale_multiplier),
-                height=np.random.normal(0, 0.01 * noise_scale_multiplier),
+                x=np.random.normal(0, 2.50 * noise_scale_multiplier),
+                y=np.random.normal(0, 2.50 * noise_scale_multiplier),
+                width=np.random.normal(0, 1.25 * noise_scale_multiplier),
+                height=np.random.normal(0, 1.25 * noise_scale_multiplier),
             )
             obstacle_noises.append(obstacle_noise)
 

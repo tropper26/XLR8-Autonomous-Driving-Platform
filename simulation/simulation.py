@@ -62,18 +62,26 @@ class Simulation:
 
         iteration_infos: list[IterationInfo] = []
 
-        current_state = self.env.current_state.copy()
+        # current_state = self.env.current_state.copy()
         control_action = self.env.current_control_action.copy()
         (
+            current_state,
+            control_action,
             closest_path_point_index,
             observed_path_discretization,
             observed_path_width,
             visible_obstacles,
-        ) = self.env.get_observation()
+        ) = self.env.step(control_action, base_noise_scale=self.base_noise_scale)
 
-        self.visible_obstacle_avg: dict[int, (int, Rectangle)] = {}
-        for ob in visible_obstacles:
-            self.visible_obstacle_avg[ob.id] = (1, ob)
+        distances_to_obstacles = self.compute_distance_to_obstacles(current_state, visible_obstacles)
+
+        self.visible_obstacle_avg: dict[int, (float, float, Rectangle)] = {}
+        for ob, distance in zip(visible_obstacles, distances_to_obstacles):
+            self.visible_obstacle_avg[ob.id] = (distance, 1, ob)
+
+        current_state, visible_obstacles = self.correct_observations(
+            current_state, control_action, observed_obstacles=visible_obstacles
+        )
 
         index = 0
         end_condition = EndCondition.NOT_TERMINATED
@@ -149,8 +157,10 @@ class Simulation:
             ) = self.env.step(control_action, base_noise_scale=self.base_noise_scale)
 
             next_state, next_visible_obstacles = self.correct_observations(
-                observable_state, observed_control_action, observed_obstacles=noisy_visible_obstacles,
+                observable_state, observed_control_action, observed_obstacles=noisy_visible_obstacles
             )
+
+            # next_visible_obstacles = noisy_visible_obstacles
 
             end_condition, (reward, reward_explanation) = self.env.check_termination(
                 error_state_path_frame=error_state_traj_frame,
@@ -219,7 +229,7 @@ class Simulation:
             closest_path_point_index = next_closest_index_on_path
             observed_path_discretization = next_observed_path
             observed_path_width = next_observed_path_width
-            visible_obstacles = next_visible_obstacles
+            visible_obstacles = deepcopy(next_visible_obstacles)
             index += 1
 
         if index >= self.max_sim_iterations:
@@ -230,7 +240,7 @@ class Simulation:
         yield end_condition, iteration_infos
 
     def correct_observations(
-            self, observed_state: State, observed_control_action: ControlAction, observed_obstacles: list[Rectangle],
+            self, observed_state: State, observed_control_action: ControlAction, observed_obstacles: list[Rectangle]
     ) -> tuple[State, list[Rectangle]]:
         if self.kalman_filter is None:
             return observed_state, observed_obstacles
@@ -246,24 +256,25 @@ class Simulation:
             observed_position_y=observed_state.Y,
         )
 
-        for new_ob_measurement in observed_obstacles:
+        distances_to_obstacles = self.compute_distance_to_obstacles(corrected_state, observed_obstacles)
+
+        for new_ob_measurement, new_distance in zip(observed_obstacles, distances_to_obstacles):
             if new_ob_measurement.id in self.visible_obstacle_avg:
-                measurements_count, avg_obst = self.visible_obstacle_avg[new_ob_measurement.id]
-                new_x = (measurements_count * avg_obst.x + new_ob_measurement.x) / (measurements_count + 1)
-                new_y = (measurements_count * avg_obst.y + new_ob_measurement.y) / (measurements_count + 1)
-                new_width = (measurements_count * avg_obst.width + new_ob_measurement.width) / (measurements_count + 1)
-                new_height = (measurements_count * avg_obst.height + new_ob_measurement.height) / (
-                            measurements_count + 1)
-
-                self.visible_obstacle_avg[new_ob_measurement.id] = (
-                    measurements_count + 1, Rectangle(new_x, new_y, new_width, new_height, new_ob_measurement.id, new_ob_measurement.lifetime_seconds))
+                initial_distance, weight_sum, mean_obst = self.visible_obstacle_avg[new_ob_measurement.id]
+                weight = initial_distance / new_distance
+                new_x = (mean_obst.x * weight_sum + weight * new_ob_measurement.x) / (weight_sum + weight)
+                new_y = (mean_obst.y * weight_sum + weight * new_ob_measurement.y) / (weight_sum + weight)
+                new_width = (mean_obst.width * weight_sum + weight * new_ob_measurement.width) / (weight_sum + weight)
+                new_height = (mean_obst.height * weight_sum + weight * new_ob_measurement.height) / (weight_sum + weight)
+                self.visible_obstacle_avg[new_ob_measurement.id] = (initial_distance,
+                    weight_sum + weight, Rectangle(new_x, new_y, new_width, new_height, mean_obst.id, mean_obst.lifetime_seconds))
             else:
-                self.visible_obstacle_avg[new_ob_measurement.id] = (1, new_ob_measurement)
+                self.visible_obstacle_avg[new_ob_measurement.id] = (new_distance, 1, new_ob_measurement)
 
-        return corrected_state, [ob[1] for ob in self.visible_obstacle_avg.values()]
+        return corrected_state, [ob[2] for ob in self.visible_obstacle_avg.values()]
 
-        # distances_to_obstacles = self.compute_distance_to_obstacles(corrected_state, next_observed_obstacles)
 
-    def compute_distance_to_obstacles(self, current_state: State, obstacles: list[Rectangle]) -> np.ndarray:
+    @staticmethod
+    def compute_distance_to_obstacles(current_state: State, obstacles: list[Rectangle]) -> np.ndarray:
         return np.hypot((current_state.X - np.array([ob.x_center for ob in obstacles])),
                         (current_state.Y - np.array([ob.y_center for ob in obstacles])))

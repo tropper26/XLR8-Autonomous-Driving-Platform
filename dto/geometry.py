@@ -54,7 +54,6 @@ class Rectangle:
         return distances_squared <= circle_radii ** 2
 
     def __str__(self):
-        return f"Rectangle(x={self.x}, y={self.y}, width={self.width}, height={self.height})"
+        return f"Rectangle(id={self.id}, x={self.x}, y={self.y}, width={self.width}, height={self.height})"
 
-    def __repr__(self):
-        return f"Rectangle(x={self.x}, y={self.y}, width={self.width}, height={self.height})"
+    __repr__ = __str__
